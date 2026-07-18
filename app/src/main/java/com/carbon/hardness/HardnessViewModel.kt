@@ -47,6 +47,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     // ---- 시료/이력 ----
     var sampleName by mutableStateOf(""); private set
     var confirmingReset by mutableStateOf(false); private set
+    var savedRun by mutableStateOf(false); private set
 
     init {
         restore()
@@ -69,6 +70,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         wState[0] = prefs.w1; wState[1] = prefs.w2; wState[2] = prefs.w3
         voiceMode = prefs.voiceMode
         sampleName = prefs.sampleName
+        savedRun = prefs.savedRun
         for (s in Experiment.timerStageIndices) {
             timers[s] = TimerInfo(prefs.timerStatus(s), prefs.timerStart(s), prefs.timerEnd(s))
         }
@@ -177,41 +179,37 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         val st = stages[currentStage]
         if (st.kind == StageKind.WEIGH) {
             val remaining = st.weighSlots.filter { wState[it - 1] == null }
-            if (remaining.isEmpty()) {
-                if (currentStage < stages.size - 1) {
-                    next()
-                    status = "확정 · ${stages[currentStage].title} — \"${stages[currentStage].short} 시작\""
-                } else {
-                    finishRun()
-                }
-            } else {
+            if (remaining.isEmpty() && currentStage < stages.size - 1) {
+                next()
+                status = "확정 · ${stages[currentStage].title} — \"${stages[currentStage].short} 시작\""
+            } else if (remaining.isNotEmpty()) {
                 val n = remaining.first()
                 status = "${slotName(confirmed)} 확정 · 이어서 ${n}번 ${slotName(n)} 말하세요"
+            } else {
+                status = "확정"
             }
         } else {
             status = "확정"
         }
+        maybeSave()
     }
 
-    /** 계량까지 끝났을 때: 이력 자동 저장 */
-    private fun finishRun() {
-        val w1 = wState[0]; val w2 = wState[1]; val w3 = wState[2]
-        val h = hardness
-        if (w1 != null && w2 != null && w3 != null && h != null && !prefs.savedRun) {
-            history.add(
-                HistoryRecord(
-                    System.currentTimeMillis(), sampleName,
-                    w1, w2, w3, h, massErrorPct ?: 0.0
-                )
-            )
-            prefs.savedRun = true
-            status = when (massOk) {
-                true -> "측정 완료 · 경도 ${fmt(h)}% · 이력에 저장됨"
-                false -> "측정 완료 · 오차 초과! 재측정 권장 · 이력에 저장됨"
-                null -> "측정 완료 · 이력에 저장됨"
-            }
-        } else {
-            status = "측정 완료"
+    /** 세 무게가 모두 확정되면 (단계 무관) 즉시 이력에 저장 */
+    private fun maybeSave() {
+        if (pendingSlot != null || savedRun) return
+        val w1 = wState[0] ?: return
+        val w2 = wState[1] ?: return
+        val w3 = wState[2] ?: return
+        val h = hardness ?: return
+        history.add(
+            HistoryRecord(System.currentTimeMillis(), sampleName, w1, w2, w3, h, massErrorPct ?: 0.0)
+        )
+        savedRun = true
+        prefs.savedRun = true
+        status = when (massOk) {
+            true -> "경도 ${fmt(h)}% · 이력에 저장됨 ✓"
+            false -> "경도 ${fmt(h)}% · 오차 초과, 재측정 권장 · 저장됨"
+            null -> "이력에 저장됨 ✓"
         }
     }
 
@@ -229,6 +227,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun persistWeights() {
         prefs.w1 = wState[0]; prefs.w2 = wState[1]; prefs.w3 = wState[2]
         prefs.savedRun = false
+        savedRun = false
     }
 
     private fun slotName(slot: Int) = slots[slot - 1].name
@@ -337,6 +336,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         prefs.clearAll()
         prefs.voiceMode = vm   // 모드 설정은 유지
         sampleName = ""
+        savedRun = false
         status = "새 측정 시작 · 시료명을 정하고 \"거르기 시작\""
     }
 

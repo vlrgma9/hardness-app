@@ -1,0 +1,222 @@
+<title>활성탄 경도 · 화면 설계</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  :root{
+    --bg:#0e120d; --surface:#181f17; --surface2:#202a1e; --line:#2b382a;
+    --txt:#eaf2e9; --sub:#90a389; --accent:#57c777; --accent-ink:#08210f;
+    --amber:#f2b134; --red:#ff5a47; --okbg:#1e4d2b; --okline:#2f6f42;
+    --badbg:#5a1f1a; --badline:#8a3227;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Roboto Mono",monospace;
+    --sans:-apple-system,"Segoe UI","Noto Sans KR",system-ui,sans-serif;
+  }
+  :root[data-theme="light"]{
+    --bg:#eef1ea; --surface:#ffffff; --surface2:#f3f6ef; --line:#d9e0d3;
+    --txt:#16201a; --sub:#5c6b57; --accent:#2e9e51; --accent-ink:#ffffff;
+    --okbg:#cdebd4; --okline:#8ecb9f; --badbg:#f6d2cd; --badline:#e2a49a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;line-height:1.35}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .phone{max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;
+    padding:12px 12px 0;gap:10px}
+
+  .demo{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--sub);
+    background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:7px 9px}
+  .demo b{color:var(--txt)}
+  .demo button{margin-left:auto;font:inherit;background:var(--surface2);color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+
+  .head{display:flex;align-items:center;gap:8px}
+  h1{font-size:15px;font-weight:800;letter-spacing:.02em}
+  .head .g{margin-left:auto;font-size:12px;color:var(--sub)}
+
+  .strip{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:8px 4px;text-align:center}
+  .step .k{font-size:11px;color:var(--sub);white-space:nowrap}
+  .step .s{font-size:11px;font-weight:700;margin-top:3px}
+  .step.done{border-color:var(--accent)} .step.done .s{color:var(--accent)}
+  .step.run{background:var(--surface2);border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+  .step.run .s{color:var(--amber)}
+  .step.now{outline:2px solid var(--accent)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--line);margin:0 auto 4px}
+  .step.done .dot{background:var(--accent)} .step.run .dot{background:var(--amber)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px}
+
+  .active .lab{display:flex;justify-content:space-between;align-items:center;color:var(--sub);font-size:14px}
+  .tag{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .tag.run{background:var(--amber);color:#231a02}
+  .count{font-family:var(--mono);font-size:64px;font-weight:800;text-align:center;
+    line-height:1;margin:8px 0 6px;color:var(--amber)}
+  .clock{display:flex;justify-content:center;gap:10px;color:var(--sub);font-size:15px}
+  .clock b{color:var(--txt)} .clock .fin{color:var(--accent)}
+  .btn{width:100%;border:none;border-radius:16px;font-family:var(--sans);
+    font-size:24px;font-weight:800;padding:22px;cursor:pointer;color:#fff;background:var(--red)}
+  .btn:active{filter:brightness(.92)}
+  .mt{margin-top:12px}
+
+  /* weights — one value each, numbered */
+  .wgrid{display:flex;flex-direction:column;gap:8px}
+  .wrow{display:flex;align-items:center;gap:12px;background:var(--surface2);
+    border:1px solid var(--line);border-radius:14px;padding:12px 14px;cursor:pointer}
+  .idx{width:30px;height:30px;flex:none;border-radius:9px;background:var(--bg);
+    border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);
+    font-weight:800;font-size:16px;color:var(--accent)}
+  .wname{flex:1}
+  .wname b{font-size:16px} .wname span{display:block;font-size:12px;color:var(--sub)}
+  .chip{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:24px;font-weight:800;
+    min-width:112px;text-align:right}
+  .chip small{font-size:14px;color:var(--sub);font-weight:600;margin-left:3px}
+  .chip.empty{color:var(--sub)}
+  .wrow.pending{border-color:var(--accent);box-shadow:0 0 0 2px rgba(87,199,119,.4)}
+  .wrow.pending .chip{color:var(--accent)}
+
+  /* verify (mass balance) */
+  .verify{display:flex;align-items:center;gap:16px;border-radius:18px;padding:15px 18px;
+    border:1px solid var(--okline);background:var(--okbg)}
+  .verify.bad{border-color:var(--badline);background:var(--badbg)}
+  .vleft{flex:none}
+  .vl{font-size:12px;color:var(--sub)}
+  .vbig{font-family:var(--mono);font-size:40px;font-weight:800;line-height:1.05}
+  .vbig span{font-size:20px}
+  .vok{font-size:12px;font-weight:700}
+  .vcmp{flex:1;border-left:1px solid var(--okline);padding-left:16px;font-size:13px;color:var(--sub)}
+  .verify.bad .vcmp{border-color:var(--badline)}
+  .vcmp div{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+  .vcmp b{color:var(--txt);font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:15px}
+  .hard{display:flex;justify-content:space-between;align-items:center;padding:2px 6px;
+    font-size:14px;color:var(--sub)}
+  .hard b{color:var(--txt)} .hard span{font-style:italic}
+
+  /* voice */
+  .voice{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,var(--bg) 20%);
+    padding-bottom:12px;margin-top:2px}
+  .vcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+  .vhead{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--sub)}
+  .mic{width:12px;height:12px;border-radius:50%;background:var(--accent);flex:none;
+    animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+  @media (prefers-reduced-motion:reduce){.mic{animation:none}}
+  .heard{color:var(--txt);font-weight:600}
+  .ptt{width:100%;margin-top:11px;border:none;border-radius:14px;background:var(--surface2);
+    color:var(--txt);border:1px solid var(--line);font-family:var(--sans);font-size:19px;
+    font-weight:700;padding:18px;cursor:pointer}
+  .ptt:active{background:var(--accent);color:var(--accent-ink)}
+  .qbar{margin-top:11px;text-align:center}
+  .qt{font-size:13px;color:var(--sub)} .qv{font-family:var(--mono);font-size:26px;font-weight:800}
+  .cbtns{display:flex;gap:16px;margin-top:11px}
+  .cbtns button{flex:1;border-radius:14px;font-family:var(--sans);font-weight:800;
+    font-size:23px;padding:20px 0;cursor:pointer;border:none}
+  .yes{background:var(--accent);color:var(--accent-ink)}
+  .no{background:var(--surface2);color:var(--txt);border:1px solid var(--line)}
+  .hint{font-size:12px;color:var(--sub);text-align:center;margin-top:9px}
+  .hidden{display:none!important}
+</style>
+
+<div class="phone">
+  <div class="demo">데모: <b id="modeName">계량 중 · 확인 대기</b>
+    <button onclick="toggle()">전환 ▶</button></div>
+
+  <div class="head"><h1>활성탄 경도</h1><span class="g">샘플 A-07 · 14:12</span></div>
+
+  <div class="strip">
+    <div class="step done"><div class="dot"></div><div class="k">거르기</div><div class="s">완료</div></div>
+    <div class="step done"><div class="dot"></div><div class="k">초기무게</div><div class="s">45.34</div></div>
+    <div class="step" id="s3"><div class="dot"></div><div class="k">마모 30′</div><div class="s">대기</div></div>
+    <div class="step" id="s4"><div class="dot"></div><div class="k">미세체 3′</div><div class="s">대기</div></div>
+    <div class="step now" id="s5"><div class="dot"></div><div class="k">계량</div><div class="s">진행</div></div>
+  </div>
+
+  <!-- ACTIVE timer (hidden by default) -->
+  <div class="card active hidden" id="timerCard">
+    <div class="lab"><span>마모 · 쇠구슬 30분</span><span class="tag run">진행 중</span></div>
+    <div class="count num" id="count">21:04</div>
+    <div class="clock"><span>시작 <b>14:12</b></span><span>→</span><span class="fin">완료 <b>14:42</b></span></div>
+    <button class="btn mt">■ 정지</button>
+  </div>
+
+  <!-- weights: 3 values, one each, numbered -->
+  <div class="card" id="weighCard">
+    <div class="wgrid">
+      <div class="wrow">
+        <div class="idx">1</div>
+        <div class="wname"><b>초기 M₀</b><span>거른 활성탄 10mL 부피</span></div>
+        <div class="chip num">45.34<small>g</small></div>
+      </div>
+      <div class="wrow">
+        <div class="idx">2</div>
+        <div class="wname"><b>가벼운</b><span>미세체 통과 · 미분</span></div>
+        <div class="chip num">1.22<small>g</small></div>
+      </div>
+      <div class="wrow pending" id="pendRow">
+        <div class="idx">3</div>
+        <div class="wname"><b>무거운</b><span>미세체 잔류 · 잔립</span></div>
+        <div class="chip num" id="pendChip">43.88<small>g</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- verify -->
+  <div id="resultZone">
+    <div class="verify" id="verify">
+      <div class="vleft">
+        <div class="vl">질량 검증</div>
+        <div class="vbig num">0.4<span>%</span></div>
+        <div class="vok">✓ 정상 · 오차 ≤2%</div>
+      </div>
+      <div class="vcmp">
+        <div><span>가벼운 + 무거운</span><b class="num">45.10 g</b></div>
+        <div><span>초기 M₀</span><b class="num">45.34 g</b></div>
+      </div>
+    </div>
+    <div class="hard mt"><span>경도</span><b>계산식 확정 후 표시</b></div>
+  </div>
+
+  <!-- voice -->
+  <div class="voice">
+    <div class="vcard">
+      <div class="vhead"><span class="mic"></span> 듣는 중 · <span class="heard" id="heard">"삼번 사십삼쩜팔팔"</span></div>
+
+      <button class="ptt" id="ptt">🎤 눌러서 말하기</button>
+
+      <div id="confirm">
+        <div class="qbar"><div class="qt">3번 무거운 입력됨 — 맞나요?</div><div class="qv num">43.88 g</div></div>
+        <div class="cbtns">
+          <button class="no">✗ 아니</button>
+          <button class="yes" onclick="say()">응 ✓</button>
+        </div>
+      </div>
+      <div class="hint">“일번 사십오쩜삼사” 처럼 한 번에 · “응/맞아”로 확정 · 버튼은 팔꿈치로</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let mode=0; const names=["계량 중 · 확인 대기","마모 타이머 진행 중"];
+  function toggle(){
+    mode=1-mode; document.getElementById('modeName').textContent=names[mode];
+    const t=mode===1;
+    document.getElementById('timerCard').classList.toggle('hidden',!t);
+    document.getElementById('weighCard').classList.toggle('hidden',t);
+    document.getElementById('resultZone').classList.toggle('hidden',t);
+    document.getElementById('confirm').classList.toggle('hidden',t);
+    document.getElementById('s3').className=t?'step run now':'step';
+    document.getElementById('s3').querySelector('.s').textContent=t?'14:42':'대기';
+    document.getElementById('s5').className=t?'step':'step now';
+    document.getElementById('heard').textContent=t?'"마모 시작"':'"삼번 사십삼쩜팔팔"';
+  }
+  let live=21*60+4;
+  setInterval(()=>{ if(mode===1){ live--; const m=String(Math.floor(live/60)).padStart(2,'0');
+    const s=String(live%60).padStart(2,'0'); document.getElementById('count').textContent=m+':'+s; }},1000);
+  function say(){
+    document.getElementById('pendRow').classList.remove('pending');
+    document.getElementById('confirm').classList.add('hidden');
+    document.getElementById('heard').textContent='"응" — 43.88 확정';
+  }
+  document.getElementById('ptt').addEventListener('pointerdown',e=>{
+    e.target.textContent='🎤 듣는 중…'; });
+  document.getElementById('ptt').addEventListener('pointerup',e=>{
+    e.target.textContent='🎤 눌러서 말하기'; });
+</script>

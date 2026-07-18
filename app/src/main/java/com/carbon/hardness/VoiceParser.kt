@@ -8,8 +8,16 @@ enum class Command { START_TIMER, STOP_TIMER, NEXT, PREV, CONFIRM, REJECT, SAVE,
  * - slot  : "일번/이번/삼번" 처럼 콕 집은 칸 번호(1~3), 없으면 null
  * - number: 무게 값, 없으면 null
  * - command: 명령, 없으면 null
+ * - stageRef: "거르기/쇠구슬/체진동기"처럼 단계를 콕 집은 경우 그 단계 index
+ * - sampleName: "시료 에이칠" → "에이칠"
  */
-data class ParsedVoice(val command: Command?, val slot: Int?, val number: Double?)
+data class ParsedVoice(
+    val command: Command?,
+    val slot: Int?,
+    val number: Double?,
+    val stageRef: Int? = null,
+    val sampleName: String? = null,
+)
 
 /**
  * 한국어 음성 → 숫자/슬롯/명령 파서.
@@ -39,12 +47,31 @@ object VoiceParser {
 
     fun parse(raw: String): ParsedVoice {
         val text = raw.trim()
+
+        // "시료 ○○" — 시료명 입력. 숫자 파싱보다 먼저 (이름 속 '칠' 등이 무게로 오인 방지)
+        if (text.replace(" ", "").startsWith("시료")) {
+            val name = text.removePrefix("시료").trim().removePrefix("이름").trim()
+            if (name.isNotBlank()) return ParsedVoice(null, null, null, null, name)
+        }
+
         val (slot, rest) = extractSlot(text)
         val command = detectCommand(text)
+        val stageRef = detectStageRef(text)
         // 명령이 인식되면 숫자 해석은 버린다 ("타이머 시작"의 '이'가 2로 오인되는 것 방지).
         // 단, "이번 구십사쩜육사"처럼 슬롯을 콕 집었으면 숫자가 우선.
-        val number = if (command != null && slot == null) null else parseWeight(rest)
-        return ParsedVoice(command, slot, number)
+        val number = if ((command != null || stageRef != null) && slot == null) null else parseWeight(rest)
+        return ParsedVoice(command, slot, number, stageRef)
+    }
+
+    /** "거르기 시작", "쇠구슬 시작", "체진동기 시작" 처럼 단계를 콕 집은 경우 */
+    private fun detectStageRef(raw: String): Int? {
+        val s = raw.replace(" ", "")
+        return when {
+            s.contains("거르기") -> 0
+            s.contains("쇠구슬") || s.contains("마모") -> 2
+            s.contains("체진동기") || s.contains("진동기") || s.contains("미세체") -> 3
+            else -> null
+        }
     }
 
     private fun extractSlot(text: String): Pair<Int?, String> {

@@ -21,6 +21,20 @@ class Prefs(context: Context) {
         get() = sp.getLong("sampleStart", 0L)
         set(v) { sp.edit().putLong("sampleStart", v).apply() }
 
+    /** 음성 사용 여부 (false = 수동 모드) */
+    var voiceMode: Boolean
+        get() = sp.getBoolean("voiceMode", true)
+        set(v) { sp.edit().putBoolean("voiceMode", v).apply() }
+
+    var sampleName: String
+        get() = sp.getString("sampleName", "") ?: ""
+        set(v) { sp.edit().putString("sampleName", v).apply() }
+
+    /** 이번 측정이 이력에 저장됐는지 (중복 저장 방지) */
+    var savedRun: Boolean
+        get() = sp.getBoolean("savedRun", false)
+        set(v) { sp.edit().putBoolean("savedRun", v).apply() }
+
     // 타이머 단계별: status(0=idle,1=running,2=done), start, end
     fun timerStatus(stage: Int) = sp.getInt("t${stage}_st", 0)
     fun timerStart(stage: Int) = sp.getLong("t${stage}_start", 0L)

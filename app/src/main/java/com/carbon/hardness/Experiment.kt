@@ -18,9 +18,9 @@ object Experiment {
     val stages = listOf(
         Stage(0, "거르기", "중간 활성탄 거르기 · 채 2개", StageKind.TIMER, minutes = 10),
         Stage(1, "초기무게", "초기 무게 재기 (M₀)", StageKind.WEIGH, weighSlots = listOf(1)),
-        Stage(2, "마모 30′", "쇠구슬 넣고 마모", StageKind.TIMER, minutes = 30),
-        Stage(3, "미세체 3′", "미세체로 거르기", StageKind.TIMER, minutes = 3),
-        Stage(4, "계량", "가벼운·무거운 무게 재기", StageKind.WEIGH, weighSlots = listOf(2, 3)),
+        Stage(2, "쇠구슬", "쇠구슬 넣고 마모 (30분)", StageKind.TIMER, minutes = 30),
+        Stage(3, "체진동기", "체진동기로 거르기 (3분)", StageKind.TIMER, minutes = 3),
+        Stage(4, "계량", "무거운·가벼운 무게 재기", StageKind.WEIGH, weighSlots = listOf(2, 3)),
     )
 
     val slots = listOf(

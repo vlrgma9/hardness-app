@@ -2,59 +2,56 @@ package com.carbon.hardness
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import java.util.Locale
 
 /**
- * 연속 음성 인식 + TTS 되읽기.
- * - 항상 듣고 있다가 결과가 나오면 재시작(핸즈프리)
- * - TTS 로 말하는 동안에는 인식을 멈춰 자기 목소리를 되먹지 않게 함
+ * 연속 음성 인식 (수동 on/off).
+ * - start() 후 결과가 나올 때마다 자동 재시작, stop() 하면 완전히 멈춤
+ * - 인식 재시작마다 나는 시스템 효과음("띠링")은 세션 동안 뮤트
  */
 class VoiceEngine(
     private val context: Context,
     private val onPartial: (String) -> Unit,
     private val onFinal: (String) -> Unit,
+    private val onStateChange: (Boolean) -> Unit,
 ) : RecognitionListener {
 
     private var recognizer: SpeechRecognizer? = null
-    private var tts: TextToSpeech? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    private var listening = false
-    private var wantListening = false
-    private var speaking = false
-    private var ttsReady = false
+    private var listening = false      // 개별 세션이 돌고 있는지
+    private var wantListening = false  // 사용자가 켜둔 상태인지
+    private var muted = false
 
     fun init() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) return
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
             setRecognitionListener(this@VoiceEngine)
         }
-        tts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.KOREAN
-                ttsReady = true
-            }
-        }
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { resumeAfterSpeech() }
-            @Deprecated("deprecated") override fun onError(utteranceId: String?) { resumeAfterSpeech() }
-        })
     }
 
-    private fun resumeAfterSpeech() {
-        handler.post {
-            speaking = false
-            if (wantListening) startListeningInternal()
-        }
+    val isOn get() = wantListening
+
+    fun start() {
+        if (recognizer == null) return
+        wantListening = true
+        muteBeeps()
+        onStateChange(true)
+        startListeningInternal()
+    }
+
+    fun stop() {
+        wantListening = false
+        listening = false
+        try { recognizer?.cancel() } catch (_: Exception) {}
+        unmuteBeeps()
+        onStateChange(false)
     }
 
     private fun buildIntent(): Intent =
@@ -67,28 +64,8 @@ class VoiceEngine(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
 
-    fun start() {
-        wantListening = true
-        if (!speaking) startListeningInternal()
-    }
-
-    fun stop() {
-        wantListening = false
-        listening = false
-        try { recognizer?.cancel() } catch (_: Exception) {}
-    }
-
-    /** 탭-투-토크: 지금 바로 새로 듣기 시작 */
-    fun nudge() {
-        wantListening = true
-        if (speaking) return
-        try { recognizer?.cancel() } catch (_: Exception) {}
-        listening = false
-        handler.postDelayed({ startListeningInternal() }, 120)
-    }
-
     private fun startListeningInternal() {
-        if (listening || speaking || !wantListening) return
+        if (listening || !wantListening) return
         try {
             recognizer?.startListening(buildIntent())
             listening = true
@@ -97,20 +74,31 @@ class VoiceEngine(
         }
     }
 
-    private fun scheduleRestart(delay: Long = 400) {
+    private fun scheduleRestart(delay: Long = 350) {
         listening = false
-        if (!wantListening || speaking) return
+        if (!wantListening) return
         handler.postDelayed({ startListeningInternal() }, delay)
     }
 
-    fun speak(text: String) {
-        if (!ttsReady) return
-        speaking = true
-        listening = false
-        try { recognizer?.cancel() } catch (_: Exception) {}
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "utt")
-        // 안전장치: onDone 이 안 오면 강제 재개
-        handler.postDelayed({ if (speaking) resumeAfterSpeech() }, 6000)
+    /** 인식 시작/종료 시스템 효과음 뮤트 (미디어·시스템 스트림) */
+    private fun muteBeeps() {
+        if (muted) return
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+            am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
+            muted = true
+        } catch (_: Exception) {}
+    }
+
+    private fun unmuteBeeps() {
+        if (!muted) return
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+        } catch (_: Exception) {}
+        muted = false
     }
 
     // ---- RecognitionListener ----
@@ -128,7 +116,7 @@ class VoiceEngine(
     }
 
     override fun onError(error: Int) {
-        val delay = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 800L else 400L
+        val delay = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 800L else 350L
         scheduleRestart(delay)
     }
 
@@ -141,7 +129,7 @@ class VoiceEngine(
 
     fun destroy() {
         wantListening = false
+        unmuteBeeps()
         try { recognizer?.destroy() } catch (_: Exception) {}
-        tts?.shutdown()
     }
 }

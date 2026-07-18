@@ -71,6 +71,23 @@ class VoiceParserTest {
         assertEquals(94.64, p.number!!, 0.001)
     }
 
+    @Test fun stageNamedTimer() {
+        val a = VoiceParser.parse("거르기 시작")
+        assertEquals(Command.START_TIMER, a.command); assertEquals(0, a.stageRef); assertNull(a.number)
+        val b = VoiceParser.parse("쇠구슬 시작")
+        assertEquals(Command.START_TIMER, b.command); assertEquals(2, b.stageRef)
+        val c = VoiceParser.parse("마모 시작")
+        assertEquals(Command.START_TIMER, c.command); assertEquals(2, c.stageRef)
+        val d = VoiceParser.parse("체진동기 시작")
+        assertEquals(Command.START_TIMER, d.command); assertEquals(3, d.stageRef)
+    }
+
+    @Test fun sampleName() {
+        assertEquals("에이 칠", VoiceParser.parse("시료 에이 칠").sampleName)
+        // 이름 속 '칠'이 무게 7로 오인되면 안 됨
+        assertNull(VoiceParser.parse("시료 에이 칠").number)
+    }
+
     @Test fun noise() {
         assertNull(w("안녕하세요"))
         assertNull(w("확인"))

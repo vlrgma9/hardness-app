@@ -167,6 +167,9 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         if (on) lastVoiceAt = System.currentTimeMillis()
     }
 
+    /** 음성엔진에서 온 안내 메시지 (엔진 전환·오류 등) */
+    fun showNotice(text: String) { status = text }
+
     fun toggleMic() {
         if (!voiceMode) return
         requestMic(!micOn)

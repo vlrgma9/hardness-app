@@ -139,7 +139,14 @@ class MainActivity : ComponentActivity() {
             context = this,
             onPartial = { vm.onPartial(it) },
             onFinal = { vm.onFinal(it) },
-            onStateChange = { vm.onMicStateChanged(it) },
+            onStateChange = {
+                vm.onMicStateChanged(it)
+                vm.onDeviceStt = voice?.usingOnDevice == true
+            },
+            onNotice = {
+                vm.showNotice(it)
+                vm.onDeviceStt = voice?.usingOnDevice == true
+            },
         ).also { it.init() }
         vm.onDeviceStt = voice?.usingOnDevice == true
 

@@ -1,0 +1,212 @@
+<title>v0.6 미리보기 · 다이얼 관성 + 안내 배너</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  :root{
+    --bg:#f4f6f8; --surf:#ffffff; --line:#e4e8ed; --txt:#101828; --sub:#667085;
+    --accent:#2e6be6; --accent-soft:#eaf1fe; --green:#067647; --green-soft:#eaf7ef;
+    --mono:ui-monospace,"SF Mono","Roboto Mono",monospace;
+    --sans:-apple-system,"Segoe UI","Noto Sans KR",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#11151b; --surf:#1a2028; --line:#2a323d; --txt:#e8edf4; --sub:#8b96a5;
+      --accent:#4d82f3; --accent-soft:#1d2b45; --green-soft:#153526; }
+  }
+  :root[data-theme="light"]{ --bg:#f4f6f8; --surf:#ffffff; --line:#e4e8ed; --txt:#101828;
+    --sub:#667085; --accent:#2e6be6; --accent-soft:#eaf1fe; --green-soft:#eaf7ef; }
+  :root[data-theme="dark"]{ --bg:#11151b; --surf:#1a2028; --line:#2a323d; --txt:#e8edf4;
+    --sub:#8b96a5; --accent:#4d82f3; --accent-soft:#1d2b45; --green-soft:#153526; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);line-height:1.4;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:430px;margin:0 auto;padding:16px 14px 40px;display:flex;
+    flex-direction:column;gap:14px}
+  h1{font-size:17px;font-weight:900}
+  h2{font-size:13px;font-weight:900;color:var(--accent);margin-bottom:6px;
+    text-transform:uppercase;letter-spacing:.04em}
+  .note{font-size:12px;color:var(--sub)}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:20px;padding:16px}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* ---- 1. 안내 배너 ---- */
+  .strip{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px}
+  .step{background:var(--surf);border:1px solid var(--line);border-radius:12px;
+    padding:7px 2px;text-align:center;font-size:11px;color:var(--sub)}
+  .step b{display:block;font-size:10px;color:var(--green);font-family:var(--mono)}
+  .step.on{border:2px solid var(--accent);color:var(--txt);font-weight:700}
+  .guide{background:var(--accent);border-radius:16px;padding:14px 16px;
+    display:flex;align-items:center;gap:12px;
+    box-shadow:0 4px 14px rgba(46,107,230,.35)}
+  .guide .ic{font-size:22px}
+  .guide .g1{color:#c9dafb;font-size:12px;font-weight:700}
+  .guide .g2{color:#fff;font-size:17px;font-weight:900;line-height:1.3}
+  .rowmini{display:flex;gap:8px;margin-top:10px}
+  .wmini{flex:1;background:var(--bg);border-radius:12px;padding:9px 10px;font-size:12px;color:var(--sub)}
+  .wmini b{display:block;color:var(--txt);font-family:var(--mono);font-size:16px}
+
+  /* ---- 2. 다이얼 ---- */
+  .value{font-family:var(--mono);font-size:46px;font-weight:900;text-align:center}
+  .value small{font-size:20px;color:var(--sub);font-weight:700}
+  .speedtag{text-align:center;font-size:12px;font-weight:900;height:16px;margin-top:2px}
+  .speedtag.fast{color:var(--accent)}
+  .speedtag.slow{color:var(--sub);font-weight:400}
+  .dial{position:relative;height:86px;background:var(--bg);border:1px solid var(--line);
+    border-radius:14px;margin-top:10px;touch-action:pan-y;overflow:hidden;cursor:grab}
+  .dial canvas{width:100%;height:100%;display:block}
+  .hint{font-size:11px;color:var(--sub);text-align:center;margin-top:6px}
+</style>
+
+<div class="wrap">
+  <h1>🎛️ v0.6 미리보기 — 승인용</h1>
+  <p class="note">두 가지를 확인해 주세요. ① 파란 안내 배너 위치·모양 ② 다이얼을 직접 돌려보고 관성 느낌</p>
+
+  <!-- 1. 안내 배너 -->
+  <div class="card">
+    <h2>1 · 다음 할 일 안내 배너</h2>
+    <div class="strip">
+      <div class="step">거르기<b>✓ 14:22</b></div>
+      <div class="step">초기무게<b>50.44</b></div>
+      <div class="step on">쇠구슬</div>
+      <div class="step">체진동기<b>3′</b></div>
+      <div class="step">계량<b>—</b></div>
+    </div>
+    <div class="guide">
+      <div class="ic">💬</div>
+      <div>
+        <div class="g1">다음 할 일</div>
+        <div class="g2">쇠구슬 넣고 &ldquo;마모 시작&rdquo; 이라고 말하세요</div>
+      </div>
+    </div>
+    <div class="rowmini">
+      <div class="wmini">1 초기 M₀<b>50.44</b></div>
+      <div class="wmini">2 무거운<b>—</b></div>
+      <div class="wmini">3 가벼운<b>—</b></div>
+    </div>
+    <p class="note" style="margin-top:10px">파란 배너가 진행바 바로 아래에 항상 떠서, 지금 말해야 할 문장을 정확히 알려줍니다. 상태가 바뀔 때마다 문구가 갱신돼요 (예: &ldquo;3번 가벼운 무게를 말하세요&rdquo;, &ldquo;맞으면 '응'&rdquo;).</p>
+  </div>
+
+  <!-- 2. 다이얼 -->
+  <div class="card">
+    <h2>2 · 다이얼 — 직접 돌려보세요</h2>
+    <div class="value num" id="val">50.44<small> g</small></div>
+    <div class="speedtag slow" id="speed">천천히 = 0.01 단위</div>
+    <div class="dial" id="dial"><canvas id="cv"></canvas></div>
+    <p class="hint">천천히 끌면 0.01씩 정밀하게 · <b>빠르게 튕기면</b> 관성으로 쫙 돌며 0.1 단위로 쫘라락</p>
+  </div>
+
+  <p class="note">이 느낌 그대로 앱에 넣습니다. 감도(관성 세기·멈추는 속도)는 설치 후 다시 조절 가능해요.</p>
+</div>
+
+<script>
+(function(){
+  const dial = document.getElementById('dial');
+  const cv = document.getElementById('cv');
+  const valEl = document.getElementById('val');
+  const speedEl = document.getElementById('speed');
+  const ctx = cv.getContext('2d');
+
+  let value = 50.44;          // g
+  const SPACING = 14;         // px per 0.01
+  let vel = 0;                // px/ms
+  let raf = null;
+
+  function resize(){
+    const r = dial.getBoundingClientRect();
+    cv.width = r.width * devicePixelRatio;
+    cv.height = r.height * devicePixelRatio;
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    draw();
+  }
+  addEventListener('resize', resize);
+
+  function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+  function draw(){
+    const w = cv.width/devicePixelRatio, h = cv.height/devicePixelRatio;
+    ctx.clearRect(0,0,w,h);
+    const cx = w/2;
+    const t = value*100;
+    const first = Math.floor(t - cx/SPACING) - 1;
+    const last  = Math.ceil(t + cx/SPACING) + 1;
+    for(let k=first;k<=last;k++){
+      if(k<0) continue;
+      const x = cx + (k - t)*SPACING;
+      if(x<0||x>w) continue;
+      const major = k%10===0;
+      ctx.strokeStyle = major ? '#98a2b3' : '#d0d5dd';
+      ctx.lineWidth = major?2.5:1.5;
+      ctx.beginPath();
+      ctx.moveTo(x,h);
+      ctx.lineTo(x,h-(major?h*.62:h*.34));
+      ctx.stroke();
+      if(major){
+        ctx.fillStyle = css('--sub');
+        ctx.font = '10px ui-monospace,monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText((k/100).toFixed(1), x, h-h*.62-5);
+      }
+    }
+    ctx.strokeStyle = css('--accent');
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(cx,h); ctx.lineTo(cx,4); ctx.stroke();
+  }
+
+  function setValue(v, fast){
+    value = Math.max(0, Math.min(200, v));
+    const shown = fast ? Math.round(value*10)/10 : Math.round(value*100)/100;
+    valEl.innerHTML = shown.toFixed(2) + '<small> g</small>';
+    speedEl.textContent = fast ? '빠름! 0.1 단위로 쫘라락' : '천천히 = 0.01 단위';
+    speedEl.className = 'speedtag ' + (fast?'fast':'slow');
+    draw();
+  }
+
+  let dragging=false, lastX=0, lastT=0;
+  dial.addEventListener('pointerdown', e=>{
+    dragging=true; lastX=e.clientX; lastT=performance.now(); vel=0;
+    if(raf){ cancelAnimationFrame(raf); raf=null; }
+    dial.setPointerCapture(e.pointerId);
+  });
+  dial.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const now = performance.now();
+    const dx = e.clientX - lastX;
+    const dt = Math.max(1, now-lastT);
+    vel = 0.8*vel + 0.2*(dx/dt);
+    lastX = e.clientX; lastT = now;
+    const fast = Math.abs(vel) > 0.55;
+    const unit = fast ? 0.1 : 0.01;              // 빠르면 같은 거리로 10배 이동
+    setValue(value - dx/SPACING*unit/0.01*0.01, fast);
+  });
+  function up(e){
+    if(!dragging) return;
+    dragging=false;
+    if(Math.abs(vel) > 0.35){
+      // 관성: 0.1 단위로 쫘라락 감속
+      let v = vel;
+      let acc = 0;
+      const startVal = value;
+      let cur = value;
+      function stepAnim(){
+        v *= 0.94;
+        cur -= v*16/SPACING*0.01*10;   // 관성 중엔 10배(0.1단위) 속도
+        cur = Math.max(0, Math.min(200, cur));
+        const fast = Math.abs(v) > 0.12;
+        if(fast){
+          setValue(Math.round(cur*10)/10, true);
+        } else {
+          setValue(Math.round(cur*100)/100, false);
+          raf=null; return;
+        }
+        raf = requestAnimationFrame(stepAnim);
+      }
+      raf = requestAnimationFrame(stepAnim);
+    } else {
+      setValue(Math.round(value*100)/100, false);
+    }
+  }
+  dial.addEventListener('pointerup', up);
+  dial.addEventListener('pointercancel', up);
+
+  resize();
+  setValue(50.44,false);
+})();
+</script>

@@ -22,7 +22,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -216,6 +219,7 @@ private fun AppScreen(
             Header(vm, onShare, onShareCsv, onEditName = { editName = true },
                 onHistory = { showHistory = true }, onSettings = { showSettings = true })
             StepStrip(vm)
+            GuideBanner(vm)
             val runStage = vm.activeTimerStage
             val curIsTimer = vm.stages[vm.currentStage].kind == StageKind.TIMER
             val timerStage = runStage ?: if (curIsTimer) vm.currentStage else null
@@ -330,6 +334,31 @@ private fun ToolChip(text: String, active: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 9.dp)
     ) {
         Text(text, color = if (active) Color.White else SUB, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+// ---------- 다음 할 일 안내 배너 ----------
+@Composable
+private fun GuideBanner(vm: HardnessViewModel) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = ACCENT),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("💬", fontSize = 20.sp)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("다음 할 일", color = Color(0xFFC9DAFB), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    vm.status,
+                    color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black,
+                    lineHeight = 21.sp
+                )
+            }
+        }
     }
 }
 
@@ -623,7 +652,7 @@ private fun VoiceBar(vm: HardnessViewModel) {
                         Column(Modifier.weight(1f)) {
                             Text("듣는 중", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
                             Text(
-                                if (vm.heardText.isBlank()) vm.status else "\"${vm.heardText}\"",
+                                if (vm.heardText.isBlank()) "말씀하세요…" else "\"${vm.heardText}\"",
                                 color = Color(0xFFD8E4FB), fontSize = 14.sp, maxLines = 1
                             )
                         }
@@ -647,9 +676,9 @@ private fun VoiceBar(vm: HardnessViewModel) {
                         Column(Modifier.weight(1f)) {
                             Text("마이크 켜기", color = TXT, fontSize = 24.sp, fontWeight = FontWeight.Black)
                             Text(
-                                (if (vm.onDeviceStt) "온디바이스 인식 · " else "일반 인식 · ") +
-                                    "여기 또는 볼륨키 · ${vm.status}",
-                                color = SUB, fontSize = 13.sp, maxLines = 2
+                                (if (vm.onDeviceStt) "온디바이스 인식" else "일반 인식") +
+                                    " · 여기 또는 볼륨키를 누르세요",
+                                color = SUB, fontSize = 13.sp, maxLines = 1
                             )
                         }
                     }
@@ -862,7 +891,11 @@ private fun DialEditor(
     }
 }
 
-/** 눈금이 손가락을 따라 움직이는 가로 다이얼 */
+/**
+ * 눈금이 손가락을 따라 움직이는 가로 다이얼.
+ * - 손이 화면에 붙어 있는 동안: 항상 0.01 단위 정밀 조작
+ * - 튕기듯 놓으면(fling): 관성으로 0.1 단위로 쫘라락 감속
+ */
 @Composable
 private fun DragDial(value: Double, onChange: (Double) -> Unit) {
     val curValue by rememberUpdatedState(value)
@@ -874,12 +907,27 @@ private fun DragDial(value: Double, onChange: (Double) -> Unit) {
         Modifier.fillMaxWidth().height(84.dp)
             .clip(RoundedCornerShape(14.dp)).background(BG)
             .border(1.dp, LINE, RoundedCornerShape(14.dp))
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures { change, dragAmount ->
-                    change.consume()
-                    curOnChange(curValue - dragAmount / tickSpacingPx * 0.01)
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { delta ->
+                    // 터치 중엔 속도와 무관하게 0.01 정밀
+                    curOnChange(curValue - delta / tickSpacingPx * 0.01)
+                },
+                onDragStopped = { velocity ->
+                    // 놓는 순간 빠르면 관성 회전 (0.1 단위)
+                    var v = velocity
+                    if (kotlin.math.abs(v) > 900f) {
+                        var cur = curValue
+                        while (kotlin.math.abs(v) > 70f) {
+                            cur -= (v * 0.016f) / tickSpacingPx * 0.1
+                            cur = cur.coerceIn(0.0, 200.0)
+                            curOnChange(Math.round(cur * 10.0) / 10.0)
+                            v *= 0.93f
+                            kotlinx.coroutines.delay(16)
+                        }
+                    }
                 }
-            }
+            )
     ) {
         Canvas(Modifier.matchParentSize()) {
             val cx = size.width / 2f

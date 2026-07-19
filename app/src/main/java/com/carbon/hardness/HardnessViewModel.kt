@@ -44,6 +44,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     // ---- 마이크 상태 ----
     var micOn by mutableStateOf(false); private set          // 엔진 콜백으로 갱신
     var voiceMode by mutableStateOf(true); private set       // false = 수동 모드
+    var onDeviceStt by mutableStateOf(false)                 // 어떤 인식 엔진인지 (표시용)
     private var lastVoiceAt = 0L
 
     // ---- 시료/이력 ----

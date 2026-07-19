@@ -3,6 +3,7 @@ package com.carbon.hardness
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,8 +13,8 @@ import android.speech.SpeechRecognizer
 
 /**
  * 연속 음성 인식 (수동 on/off).
- * - start() 후 결과가 나올 때마다 자동 재시작, stop() 하면 완전히 멈춤
- * - 인식 재시작마다 나는 시스템 효과음("띠링")은 세션 동안 뮤트
+ * - 가능하면 온디바이스 전용 인식기 사용: 효과음("띠링")이 아예 없고 오프라인·연속 인식에 적합
+ * - 구형 폰은 일반 인식기 + 효과음 스트림 뮤트로 폴백
  */
 class VoiceEngine(
     private val context: Context,
@@ -28,12 +29,24 @@ class VoiceEngine(
     private var listening = false      // 개별 세션이 돌고 있는지
     private var wantListening = false  // 사용자가 켜둔 상태인지
     private var muted = false
+    var usingOnDevice = false; private set
 
     fun init() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) return
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(this@VoiceEngine)
+        recognizer = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+            ) {
+                usingOnDevice = true
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(context)
+            }
+        } catch (_: Exception) {
+            usingOnDevice = false
+            try { SpeechRecognizer.createSpeechRecognizer(context) } catch (_: Exception) { null }
         }
+        recognizer?.setRecognitionListener(this)
     }
 
     val isOn get() = wantListening
@@ -41,7 +54,7 @@ class VoiceEngine(
     fun start() {
         if (recognizer == null) return
         wantListening = true
-        muteBeeps()
+        if (!usingOnDevice) muteBeeps()   // 온디바이스는 효과음이 없어 뮤트 불필요
         onStateChange(true)
         startListeningInternal()
     }
@@ -80,24 +93,28 @@ class VoiceEngine(
         handler.postDelayed({ startListeningInternal() }, delay)
     }
 
-    /** 인식 시작/종료 시스템 효과음 뮤트 (미디어·시스템 스트림) */
+    /** 인식 시작/종료 시스템 효과음 뮤트 (폴백 인식기용) — 스트림별 개별 시도 */
+    private val beepStreams = listOf(
+        AudioManager.STREAM_MUSIC,
+        AudioManager.STREAM_SYSTEM,
+        AudioManager.STREAM_NOTIFICATION,
+    )
+
     private fun muteBeeps() {
         if (muted) return
-        try {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
-            am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
-            muted = true
-        } catch (_: Exception) {}
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        for (s in beepStreams) {
+            try { am.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
+        }
+        muted = true
     }
 
     private fun unmuteBeeps() {
         if (!muted) return
-        try {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
-            am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
-        } catch (_: Exception) {}
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        for (s in beepStreams) {
+            try { am.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, 0) } catch (_: Exception) {}
+        }
         muted = false
     }
 

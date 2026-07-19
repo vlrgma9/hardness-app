@@ -141,6 +141,7 @@ class MainActivity : ComponentActivity() {
             onFinal = { vm.onFinal(it) },
             onStateChange = { vm.onMicStateChanged(it) },
         ).also { it.init() }
+        vm.onDeviceStt = voice?.usingOnDevice == true
 
         vm.requestMic = { on ->
             if (on) {
@@ -205,7 +206,7 @@ private fun AppScreen(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Header(vm, onShare, onEditName = { editName = true },
+            Header(vm, onShare, onShareCsv, onEditName = { editName = true },
                 onHistory = { showHistory = true }, onSettings = { showSettings = true })
             StepStrip(vm)
             val runStage = vm.activeTimerStage
@@ -245,7 +246,7 @@ private fun AppScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Header(
-    vm: HardnessViewModel, onShare: (String) -> Unit,
+    vm: HardnessViewModel, onShare: (String) -> Unit, onShareCsv: () -> Unit,
     onEditName: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit
 ) {
     var shareMenu by remember { mutableStateOf(false) }
@@ -304,6 +305,8 @@ private fun Header(
                         onClick = { shareMenu = false; onShare(History.toTsv(vm.history.lastDays(7))) })
                     DropdownMenuItem(text = { Text("전체 이력 보내기") },
                         onClick = { shareMenu = false; onShare(History.toTsv(vm.history.all())) })
+                    DropdownMenuItem(text = { Text("CSV 파일로 보내기") },
+                        onClick = { shareMenu = false; onShareCsv() })
                 }
             }
         }
@@ -636,7 +639,11 @@ private fun VoiceBar(vm: HardnessViewModel) {
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text("마이크 켜기", color = TXT, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                            Text("여기 또는 볼륨키 · ${vm.status}", color = SUB, fontSize = 13.sp, maxLines = 2)
+                            Text(
+                                (if (vm.onDeviceStt) "온디바이스 인식 · " else "일반 인식 · ") +
+                                    "여기 또는 볼륨키 · ${vm.status}",
+                                color = SUB, fontSize = 13.sp, maxLines = 2
+                            )
                         }
                     }
                 }

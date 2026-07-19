@@ -59,6 +59,38 @@ class History(context: Context) {
         return all().filter { it.ts >= from }
     }
 
+    fun remove(ts: Long) {
+        val kept = all().filter { it.ts != ts }
+        val arr = JSONArray()
+        for (r in kept) {
+            arr.put(JSONObject().apply {
+                put("ts", r.ts); put("name", r.name)
+                put("w1", r.w1); put("w2", r.w2); put("w3", r.w3)
+                put("h", r.hardness); put("e", r.errPct)
+            })
+        }
+        sp.edit().putString("records", arr.toString()).apply()
+    }
+
+    /** 백업용 원본 JSON */
+    fun exportJson(): String = sp.getString("records", "[]") ?: "[]"
+
+    /** 백업 JSON 을 병합 (같은 시각 기록은 중복 저장 안 함). 추가된 개수 반환 */
+    fun importJson(text: String): Int {
+        val incoming = try { JSONArray(text) } catch (_: Exception) { return -1 }
+        val existing = all().map { it.ts }.toHashSet()
+        var added = 0
+        val arr = load()
+        for (i in 0 until incoming.length()) {
+            val o = incoming.optJSONObject(i) ?: continue
+            val ts = o.optLong("ts", 0L)
+            if (ts == 0L || ts in existing) continue
+            arr.put(o); added++
+        }
+        if (added > 0) sp.edit().putString("records", arr.toString()).apply()
+        return added
+    }
+
     private fun load(): JSONArray =
         try { JSONArray(sp.getString("records", "[]")) } catch (_: Exception) { JSONArray() }
 
@@ -75,6 +107,20 @@ class History(context: Context) {
                     .append(r.name.ifBlank { "-" }).append('\t')
                     .append(f(r.w1)).append('\t').append(f(r.w2)).append('\t').append(f(r.w3)).append('\t')
                     .append(f(r.hardness)).append('\t').append(f(r.errPct)).append('\n')
+            }
+            return sb.toString()
+        }
+
+        /** 엑셀에서 바로 열리는 CSV (UTF-8 BOM 포함) */
+        fun toCsv(records: List<HistoryRecord>): String {
+            val sb = StringBuilder("﻿날짜,시각,시료,초기 M0(g),무거운(g),가벼운(g),경도(%),질량오차(%)\n")
+            for (r in records.sortedBy { it.ts }) {
+                val date = Date(r.ts)
+                val name = r.name.ifBlank { "-" }.replace(",", " ")
+                sb.append(d.format(date)).append(',').append(t.format(date)).append(',')
+                    .append(name).append(',')
+                    .append(f(r.w1)).append(',').append(f(r.w2)).append(',').append(f(r.w3)).append(',')
+                    .append(f(r.hardness)).append(',').append(f(r.errPct)).append('\n')
             }
             return sb.toString()
         }

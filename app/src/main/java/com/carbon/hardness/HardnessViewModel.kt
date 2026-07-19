@@ -8,8 +8,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 class HardnessViewModel(app: Application) : AndroidViewModel(app) {
@@ -49,8 +51,75 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     var confirmingReset by mutableStateOf(false); private set
     var savedRun by mutableStateOf(false); private set
 
+    // ---- 설정 (기본 무게 · 타이머 분) ----
+    private val defWeights = mutableStateMapOf<Int, Double>()
+    private val stageMins = mutableStateMapOf<Int, Int>()
+
+    fun defaultWeight(slot: Int): Double = defWeights[slot]
+        ?: prefs.defaultWeight(slot, if (slot == 3) 1.50 else 45.00)
+
+    fun setDefaultWeight(slot: Int, v: Double) {
+        defWeights[slot] = v
+        prefs.setDefaultWeight(slot, v)
+    }
+
+    fun stageMinutes(stage: Int): Int = stageMins[stage]
+        ?: prefs.stageMinutes(stage, stages[stage].minutes)
+
+    fun setStageMinutes(stage: Int, min: Int) {
+        if (min < 1) return
+        stageMins[stage] = min
+        prefs.setStageMinutes(stage, min)
+    }
+
+    // ---- 업데이트 ----
+    var updateInfo by mutableStateOf<Updater.Release?>(null); private set
+    var updateBusy by mutableStateOf(false); private set
+    var updateMsg by mutableStateOf(""); private set
+
+    fun checkUpdate(silent: Boolean) {
+        if (updateBusy) return
+        updateBusy = true
+        if (!silent) updateMsg = "확인 중…"
+        viewModelScope.launch {
+            val rel = withContext(Dispatchers.IO) { Updater.fetchLatest() }
+            prefs.lastUpdateCheck = System.currentTimeMillis()
+            val cur = Updater.currentVersion(ctx)
+            if (rel != null && Updater.isNewer(rel.tag, cur) && rel.apkUrl != null) {
+                updateInfo = rel
+                updateMsg = "새 버전 ${rel.tag} 있음"
+            } else {
+                updateInfo = null
+                if (!silent) updateMsg = if (rel == null) "확인 실패 (인터넷 확인)" else "최신 버전입니다 ✓"
+            }
+            updateBusy = false
+        }
+    }
+
+    fun downloadAndInstall() {
+        val rel = updateInfo ?: return
+        val url = rel.apkUrl ?: return
+        if (updateBusy) return
+        updateBusy = true
+        updateMsg = "다운로드 중… (수 초 걸려요)"
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) { Updater.downloadApk(ctx, url) }
+            updateBusy = false
+            if (file != null) {
+                updateMsg = "설치 화면으로 이동합니다"
+                Updater.install(ctx, file)
+            } else {
+                updateMsg = "다운로드 실패 · 다시 시도해주세요"
+            }
+        }
+    }
+
     init {
         restore()
+        // 하루 1회 자동 업데이트 확인
+        if (System.currentTimeMillis() - prefs.lastUpdateCheck > 24 * 3600_000L) {
+            checkUpdate(silent = true)
+        }
         viewModelScope.launch {
             while (true) {
                 nowMillis = System.currentTimeMillis()
@@ -253,9 +322,9 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun remainingSec(stage: Int): Int {
-        val t = timers[stage] ?: return stages[stage].minutes * 60
+        val t = timers[stage] ?: return stageMinutes(stage) * 60
         return if (t.status == 1) ((t.end - nowMillis) / 1000).toInt().coerceAtLeast(0)
-        else stages[stage].minutes * 60
+        else stageMinutes(stage) * 60
     }
 
     fun startCurrentTimer() {
@@ -270,7 +339,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     fun startTimer(stage: Int) {
         if (stages[stage].kind != StageKind.TIMER) return
         activeTimerStage?.let { if (it != stage) stopTimer(it, byUser = false) }
-        val min = stages[stage].minutes
+        val min = stageMinutes(stage)
         val start = System.currentTimeMillis()
         val end = start + min * 60_000L
         timers[stage] = TimerInfo(1, start, end)
@@ -332,9 +401,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         pendingSlot = null; prevValue = null
         currentStage = 0
         timers.clear()
-        val vm = prefs.voiceMode
-        prefs.clearAll()
-        prefs.voiceMode = vm   // 모드 설정은 유지
+        prefs.clearRun()   // 설정(기본무게·타이머 분·모드)은 유지
         sampleName = ""
         savedRun = false
         status = "새 측정 시작 · 시료명을 정하고 \"거르기 시작\""

@@ -80,6 +80,56 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
+    private var backupData: String = ""
+    private val backupLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(backupData.toByteArray()) }
+                toast("백업 저장 완료")
+            } catch (_: Exception) { toast("저장 실패") }
+        }
+    }
+    private val restoreLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                val added = vm.history.importJson(text)
+                toast(if (added >= 0) "${added}건 불러옴" else "파일 형식이 아니에요")
+            } catch (_: Exception) { toast("불러오기 실패") }
+        }
+    }
+
+    private fun toast(msg: String) =
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    fun startBackup() {
+        backupData = vm.history.exportJson()
+        backupLauncher.launch("활성탄경도_백업_${SimpleDateFormat("yyMMdd", Locale.KOREA).format(Date())}.json")
+    }
+
+    fun startRestore() = restoreLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+
+    fun shareCsv() {
+        try {
+            val f = java.io.File(cacheDir, "export/hardness_history.csv")
+            f.parentFile?.mkdirs()
+            f.writeText(History.toCsv(vm.history.all()))
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "com.carbon.hardness.fileprovider", f
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "CSV 파일 보내기"))
+        } catch (_: Exception) { toast("CSV 생성 실패") }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -100,7 +150,15 @@ class MainActivity : ComponentActivity() {
         }
 
         requestPerms()
-        setContent { AppScreen(vm, onShare = { shareText(it) }) }
+        setContent {
+            AppScreen(
+                vm,
+                onShare = { shareText(it) },
+                onShareCsv = { shareCsv() },
+                onBackup = { startBackup() },
+                onRestore = { startRestore() },
+            )
+        }
     }
 
     private fun requestPerms() {
@@ -130,17 +188,25 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppScreen(vm: HardnessViewModel, onShare: (String) -> Unit) {
+private fun AppScreen(
+    vm: HardnessViewModel,
+    onShare: (String) -> Unit,
+    onShareCsv: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+) {
     var editSlot by remember { mutableStateOf(0) }
     var editName by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(BG).padding(horizontal = 14.dp)) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Header(vm, onShare, onEditName = { editName = true }, onHistory = { showHistory = true })
+            Header(vm, onShare, onEditName = { editName = true },
+                onHistory = { showHistory = true }, onSettings = { showSettings = true })
             StepStrip(vm)
             val runStage = vm.activeTimerStage
             val curIsTimer = vm.stages[vm.currentStage].kind == StageKind.TIMER
@@ -156,7 +222,7 @@ private fun AppScreen(vm: HardnessViewModel, onShare: (String) -> Unit) {
     if (editSlot != 0) {
         DialEditor(
             slot = editSlot, slotName = vm.slots[editSlot - 1].name,
-            initial = vm.weight(editSlot) ?: if (editSlot == 3) 1.5 else 45.0,
+            initial = vm.weight(editSlot) ?: vm.defaultWeight(editSlot),
             onConfirm = { vm.setWeight(editSlot, it); editSlot = 0 },
             onDismiss = { editSlot = 0 }
         )
@@ -170,6 +236,9 @@ private fun AppScreen(vm: HardnessViewModel, onShare: (String) -> Unit) {
     if (showHistory) {
         HistoryScreen(vm, onShare, onDismiss = { showHistory = false })
     }
+    if (showSettings) {
+        SettingsScreen(vm, onShareCsv, onBackup, onRestore, onDismiss = { showSettings = false })
+    }
 }
 
 // ---------- 헤더 ----------
@@ -177,7 +246,7 @@ private fun AppScreen(vm: HardnessViewModel, onShare: (String) -> Unit) {
 @Composable
 private fun Header(
     vm: HardnessViewModel, onShare: (String) -> Unit,
-    onEditName: () -> Unit, onHistory: () -> Unit
+    onEditName: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit
 ) {
     var shareMenu by remember { mutableStateOf(false) }
     Column {
@@ -188,6 +257,11 @@ private fun Header(
                 text = if (vm.voiceMode) "음성" else "수동",
                 active = vm.voiceMode,
                 onClick = { vm.updateVoiceMode(!vm.voiceMode) }
+            )
+            Spacer(Modifier.width(8.dp))
+            ToolChip(
+                text = if (vm.updateInfo != null) "설정 🔴" else "설정",
+                active = false, onClick = onSettings
             )
             Spacer(Modifier.width(8.dp))
             ToolChip(text = "초기화", active = false, onClick = { vm.requestReset() })
@@ -280,7 +354,7 @@ private fun StepStrip(vm: HardnessViewModel) {
                         }
                         done -> Text("✓ ${TimeFmt.clock(vm.timerEnd(s.index))}", color = GREEN,
                             fontFamily = MONO, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        else -> Text("${s.minutes}′", color = SUB, fontSize = 10.sp, maxLines = 1)
+                        else -> Text("${vm.stageMinutes(s.index)}′", color = SUB, fontSize = 10.sp, maxLines = 1)
                     }
                 } else {
                     val filled = s.weighSlots.count { vm.weight(it) != null }
@@ -316,13 +390,13 @@ private fun TimerCard(vm: HardnessViewModel, stage: Int) {
                 val (tag, tagBg, tagFg) = when (st) {
                     1 -> Triple("진행 중", AMBER_SOFT, AMBER)
                     2 -> Triple("완료", GREEN_SOFT, GREEN)
-                    else -> Triple("${s.minutes}분", BG, SUB)
+                    else -> Triple("${vm.stageMinutes(stage)}분", BG, SUB)
                 }
                 Box(Modifier.clip(RoundedCornerShape(999.dp)).background(tagBg).padding(horizontal = 10.dp, vertical = 4.dp)) {
                     Text(tag, color = tagFg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            val remain = if (st == 1) vm.remainingSec(stage) else s.minutes * 60
+            val remain = if (st == 1) vm.remainingSec(stage) else vm.stageMinutes(stage) * 60
             Text(
                 TimeFmt.mmss(remain),
                 color = if (st == 1) ACCENT else TXT, fontFamily = MONO,
@@ -572,9 +646,11 @@ private fun VoiceBar(vm: HardnessViewModel) {
 }
 
 // ---------- 이력 화면 ----------
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDismiss: () -> Unit) {
-    val records = remember { vm.history.all() }
+    var records by remember { mutableStateOf(vm.history.all()) }
+    var deleting by remember { mutableStateOf<HistoryRecord?>(null) }
     val df = remember { SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -600,6 +676,8 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                     ToolChip(text = "전체 📤", active = false) { onShare(History.toTsv(records)) }
                 }
                 Spacer(Modifier.height(10.dp))
+                Text("항목을 길게 누르면 삭제할 수 있어요", color = SUB, fontSize = 11.sp)
+                Spacer(Modifier.height(6.dp))
                 if (records.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
@@ -613,7 +691,9 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                             val ok = r.errPct <= 2.0
                             Column(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                    .background(BG).padding(12.dp)
+                                    .background(BG)
+                                    .combinedClickable(onClick = {}, onLongClick = { deleting = r })
+                                    .padding(12.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
@@ -645,6 +725,39 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                                 Text("질량오차 ${f2(r.errPct)}%", color = SUB, fontSize = 11.sp)
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    deleting?.let { r ->
+        Dialog(onDismissRequest = { deleting = null }) {
+            Card(colors = CardDefaults.cardColors(containerColor = SURF), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("이 기록을 삭제할까요?", color = TXT, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "${r.name.ifBlank { "(이름 없음)" }} · 경도 ${f2(r.hardness)}%",
+                        color = SUB, fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { deleting = null }, modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BG)
+                        ) { Text("취소", color = TXT, fontSize = 16.sp) }
+                        Button(
+                            onClick = {
+                                vm.history.remove(r.ts)
+                                records = vm.history.all()
+                                deleting = null
+                            },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = RED)
+                        ) { Text("삭제", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -862,6 +975,137 @@ private fun BigButton(text: String, bg: Color, fg: Color, onClick: () -> Unit) {
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(containerColor = bg)
     ) { Text(text, color = fg, fontSize = 24.sp, fontWeight = FontWeight.Black) }
+}
+
+// ---------- 설정 ----------
+@Composable
+private fun SettingsScreen(
+    vm: HardnessViewModel,
+    onShareCsv: () -> Unit, onBackup: () -> Unit, onRestore: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val version = remember { Updater.currentVersion(ctx) }
+    var dw1 by remember { mutableStateOf(fmt(vm.defaultWeight(1))) }
+    var dw2 by remember { mutableStateOf(fmt(vm.defaultWeight(2))) }
+    var dw3 by remember { mutableStateOf(fmt(vm.defaultWeight(3))) }
+    var m0 by remember { mutableStateOf(vm.stageMinutes(0).toString()) }
+    var m2 by remember { mutableStateOf(vm.stageMinutes(2).toString()) }
+    var m3 by remember { mutableStateOf(vm.stageMinutes(3).toString()) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SURF),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.9f)
+        ) {
+            Column(Modifier.fillMaxSize().padding(18.dp).verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("설정", color = TXT, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.weight(1f))
+                    ToolChip(text = "닫기", active = false, onClick = onDismiss)
+                }
+
+                // 앱 정보 / 업데이트
+                SectionTitle("앱 정보")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("현재 버전 v$version", color = TXT, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        if (vm.updateMsg.isNotBlank())
+                            Text(vm.updateMsg, color = if (vm.updateInfo != null) ACCENT else SUB, fontSize = 13.sp)
+                    }
+                    if (vm.updateInfo != null) {
+                        Button(
+                            onClick = { vm.downloadAndInstall() },
+                            enabled = !vm.updateBusy,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                        ) { Text("업데이트 설치", color = Color.White, fontWeight = FontWeight.Bold) }
+                    } else {
+                        Button(
+                            onClick = { vm.checkUpdate(silent = false) },
+                            enabled = !vm.updateBusy,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ACCENT_SOFT)
+                        ) { Text("업데이트 확인", color = ACCENT, fontWeight = FontWeight.Bold) }
+                    }
+                }
+
+                // 기본 무게
+                SectionTitle("다이얼 기본 무게 (g)")
+                Text("무게칸을 열었을 때 시작하는 값이에요", color = SUB, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                NumField("1번 초기 M₀", dw1) { dw1 = it }
+                NumField("2번 무거운", dw2) { dw2 = it }
+                NumField("3번 가벼운", dw3) { dw3 = it }
+
+                // 타이머
+                SectionTitle("타이머 시간 (분)")
+                NumField("거르기", m0) { m0 = it }
+                NumField("쇠구슬 (마모)", m2) { m2 = it }
+                NumField("체진동기", m3) { m3 = it }
+
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        dw1.toDoubleOrNull()?.let { vm.setDefaultWeight(1, round2(it)) }
+                        dw2.toDoubleOrNull()?.let { vm.setDefaultWeight(2, round2(it)) }
+                        dw3.toDoubleOrNull()?.let { vm.setDefaultWeight(3, round2(it)) }
+                        m0.toIntOrNull()?.let { vm.setStageMinutes(0, it) }
+                        m2.toIntOrNull()?.let { vm.setStageMinutes(2, it) }
+                        m3.toIntOrNull()?.let { vm.setStageMinutes(3, it) }
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                ) { Text("저장", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+
+                // 데이터
+                SectionTitle("데이터")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ToolChip(text = "CSV 파일 📤", active = false, onClick = onShareCsv)
+                    ToolChip(text = "백업 저장", active = false, onClick = onBackup)
+                    ToolChip(text = "백업 불러오기", active = false, onClick = onRestore)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "CSV: 엑셀에서 바로 열리는 파일 · 백업: 이력 전체를 파일로 저장/복원 (폰 교체 대비)",
+                    color = SUB, fontSize = 12.sp
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(t: String) {
+    Spacer(Modifier.height(18.dp))
+    Text(t, color = ACCENT, fontSize = 13.sp, fontWeight = FontWeight.Black)
+    Spacer(Modifier.height(6.dp))
+}
+
+@Composable
+private fun NumField(label: String, value: String, onChange: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = TXT, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        OutlinedTextField(
+            value = value, onValueChange = onChange, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                fontFamily = MONO, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            ),
+            modifier = Modifier.width(120.dp)
+        )
+    }
 }
 
 private fun clampD(v: Double) = max(0.0, min(200.0, v))

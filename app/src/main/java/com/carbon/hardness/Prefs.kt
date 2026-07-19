@@ -47,8 +47,31 @@ class Prefs(context: Context) {
             .apply()
     }
 
-    fun clearAll() {
-        sp.edit().clear().apply()
+    // ---- 설정 (초기화해도 유지) ----
+    fun defaultWeight(slot: Int, def: Double): Double {
+        val bits = sp.getLong("defW${slot}_bits", java.lang.Double.doubleToRawLongBits(def))
+        return java.lang.Double.longBitsToDouble(bits)
+    }
+    fun setDefaultWeight(slot: Int, v: Double) {
+        sp.edit().putLong("defW${slot}_bits", java.lang.Double.doubleToRawLongBits(v)).apply()
+    }
+
+    fun stageMinutes(stage: Int, def: Int) = sp.getInt("min_$stage", def)
+    fun setStageMinutes(stage: Int, v: Int) { sp.edit().putInt("min_$stage", v).apply() }
+
+    var lastUpdateCheck: Long
+        get() = sp.getLong("lastUpdCheck", 0L)
+        set(v) { sp.edit().putLong("lastUpdCheck", v).apply() }
+
+    /** 측정 진행 데이터만 지운다 (설정·모드는 유지) */
+    fun clearRun() {
+        val e = sp.edit()
+        for (k in listOf("w1_bits", "w2_bits", "w3_bits", "stage", "sampleStart", "sampleName", "savedRun"))
+            e.remove(k)
+        for (s in 0..4) {
+            e.remove("t${s}_st"); e.remove("t${s}_start"); e.remove("t${s}_end")
+        }
+        e.apply()
     }
 
     private fun getD(k: String): Double? {

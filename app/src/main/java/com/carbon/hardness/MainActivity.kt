@@ -998,12 +998,12 @@ private fun DialEditor(
 
                 Spacer(Modifier.height(12.dp))
 
-                // 조정 버튼
+                // 조정 버튼 (자주 쓰는 ±0.01 이 바깥쪽)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FineBtn("−1") { raw = clampD(round2(raw) - 1.0) }
                     FineBtn("−0.01") { raw = clampD(round2(raw) - 0.01) }
-                    FineBtn("+0.01") { raw = clampD(round2(raw) + 0.01) }
+                    FineBtn("−1") { raw = clampD(round2(raw) - 1.0) }
                     FineBtn("+1") { raw = clampD(round2(raw) + 1.0) }
+                    FineBtn("+0.01") { raw = clampD(round2(raw) + 0.01) }
                 }
 
                 Spacer(Modifier.height(16.dp))

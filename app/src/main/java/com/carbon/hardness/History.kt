@@ -60,9 +60,21 @@ class History(context: Context) {
     }
 
     fun remove(ts: Long) {
-        val kept = all().filter { it.ts != ts }
+        saveAll(all().filter { it.ts != ts })
+    }
+
+    /** 기록 수정: 무게가 바뀌면 경도·질량오차 재계산 */
+    fun update(ts: Long, name: String, w1: Double, w2: Double, w3: Double) {
+        val h = if (w1 > 0) w2 / w1 * 100.0 else 0.0
+        val e = if (w1 > 0) kotlin.math.abs(w2 + w3 - w1) / w1 * 100.0 else 0.0
+        saveAll(all().map {
+            if (it.ts == ts) HistoryRecord(ts, name, w1, w2, w3, h, e) else it
+        })
+    }
+
+    private fun saveAll(records: List<HistoryRecord>) {
         val arr = JSONArray()
-        for (r in kept) {
+        for (r in records.sortedBy { it.ts }) {
             arr.put(JSONObject().apply {
                 put("ts", r.ts); put("name", r.name)
                 put("w1", r.w1); put("w2", r.w2); put("w3", r.w3)

@@ -156,7 +156,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
                 if (currentStage == s && s < stages.size - 1) {
                     currentStage = s + 1; prefs.currentStage = currentStage
                 }
-                status = "${stages[s].short} 완료"
+                status = "${stages[s].short} 완료 · ${guideFor(currentStage)}"
             }
         }
     }
@@ -236,35 +236,56 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         return st.weighSlots.firstOrNull { wState[it - 1] == null } ?: st.weighSlots.last()
     }
 
+    /** 다음에 할 일을 안내하는 문장 */
+    private fun guideFor(i: Int): String {
+        val s = stages[i]
+        return if (s.kind == StageKind.TIMER) {
+            "${s.title} — \"${s.short} 시작\"이라고 말하세요"
+        } else {
+            val n = s.weighSlots.firstOrNull { wState[it - 1] == null } ?: s.weighSlots.first()
+            "${n}번 ${slotName(n)} 무게를 말하세요"
+        }
+    }
+
     // ---------- 무게 ----------
-    fun setWeight(slot: Int, value: Double) {
+    /** confirm=true(음성): "맞나요?" 확인 후 확정. false(수동 입력): 즉시 확정 */
+    fun setWeight(slot: Int, value: Double, confirm: Boolean = true) {
         if (slot !in 1..3) return
         prevValue = wState[slot - 1]
         wState[slot - 1] = value
         persistWeights()
-        pendingSlot = slot
-        status = "${slotName(slot)} = ${fmt(value)} g · 맞나요?"
+        if (confirm) {
+            pendingSlot = slot
+            status = "${slotName(slot)} = ${fmt(value)} g · 맞나요?"
+        } else {
+            pendingSlot = null
+            advanceAfterWeight(slot)
+            maybeSave()
+        }
     }
 
     fun confirmPending() {
         val confirmed = pendingSlot ?: return
         pendingSlot = null
+        advanceAfterWeight(confirmed)
+        maybeSave()
+    }
+
+    private fun advanceAfterWeight(confirmed: Int) {
         val st = stages[currentStage]
         if (st.kind == StageKind.WEIGH) {
             val remaining = st.weighSlots.filter { wState[it - 1] == null }
             if (remaining.isEmpty() && currentStage < stages.size - 1) {
                 next()
-                status = "확정 · ${stages[currentStage].title} — \"${stages[currentStage].short} 시작\""
+                status = "확정 · ${guideFor(currentStage)}"
             } else if (remaining.isNotEmpty()) {
-                val n = remaining.first()
-                status = "${slotName(confirmed)} 확정 · 이어서 ${n}번 ${slotName(n)} 말하세요"
+                status = "${slotName(confirmed)} 확정 · 이어서 ${guideFor(currentStage)}"
             } else {
                 status = "확정"
             }
         } else {
-            status = "확정"
+            status = "${slotName(confirmed)} = ${wState[confirmed - 1]?.let { fmt(it) }} g 확정"
         }
-        maybeSave()
     }
 
     /** 세 무게가 모두 확정되면 (단계 무관) 즉시 이력에 저장 */
@@ -325,10 +346,54 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         return if (s == 0L) 0 else ((nowMillis - s) / 60_000L).toInt().coerceAtLeast(0)
     }
 
+    /** 이번 회차만 적용되는 임시 타이머 시간 */
+    private val oneOffMin = mutableStateMapOf<Int, Int>()
+
+    /** 이번 회차에 적용될 분 (일회성 우선) */
+    fun effectiveMinutes(stage: Int): Int = oneOffMin[stage] ?: stageMinutes(stage)
+
     fun remainingSec(stage: Int): Int {
-        val t = timers[stage] ?: return stageMinutes(stage) * 60
+        val t = timers[stage] ?: return effectiveMinutes(stage) * 60
         return if (t.status == 1) ((t.end - nowMillis) / 1000).toInt().coerceAtLeast(0)
-        else stageMinutes(stage) * 60
+        else effectiveMinutes(stage) * 60
+    }
+
+    /**
+     * 타이머 시간 일회성 변경.
+     * 진행 중이면 남은 시간을 바로 재설정(알람 재예약), 대기 중이면 이번 시작에만 적용.
+     */
+    fun editTimer(stage: Int, min: Int) {
+        if (min < 1 || stages[stage].kind != StageKind.TIMER) return
+        val t = timers[stage]
+        if (t?.status == 1) {
+            val end = System.currentTimeMillis() + min * 60_000L
+            timers[stage] = t.copy(end = end)
+            prefs.setTimer(stage, 1, t.start, end)
+            AlarmScheduler.schedule(ctx, end, stage, "${stages[stage].short} ${min}분")
+            Notifications.showCountdown(ctx, "${stages[stage].short} ${min}분", end)
+            status = "남은 시간 ${min}분으로 변경 · 완료 ${TimeFmt.clock(end)}"
+        } else {
+            oneOffMin[stage] = min
+            status = "이번 ${stages[stage].short}만 ${min}분으로 · \"시작\"하면 적용"
+        }
+    }
+
+    /** 타이머를 안 돌렸어도 실제로 작업을 끝냈으면 수동 완료 처리 */
+    fun completeTimerStage(stage: Int) {
+        if (stages[stage].kind != StageKind.TIMER) return
+        if (timers[stage]?.status == 1) {
+            AlarmScheduler.cancel(ctx)
+            Notifications.cancelCountdown(ctx)
+        }
+        val now = System.currentTimeMillis()
+        val start = timers[stage]?.start?.takeIf { it != 0L } ?: now
+        timers[stage] = TimerInfo(2, start, now)
+        prefs.setTimer(stage, 2, start, now)
+        oneOffMin.remove(stage)
+        if (currentStage == stage && stage < stages.size - 1) {
+            currentStage = stage + 1; prefs.currentStage = currentStage
+        }
+        status = "${stages[stage].short} 완료 처리 · ${guideFor(currentStage)}"
     }
 
     fun startCurrentTimer() {
@@ -343,7 +408,8 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     fun startTimer(stage: Int) {
         if (stages[stage].kind != StageKind.TIMER) return
         activeTimerStage?.let { if (it != stage) stopTimer(it, byUser = false) }
-        val min = stageMinutes(stage)
+        val min = effectiveMinutes(stage)
+        oneOffMin.remove(stage)   // 일회성이므로 사용 후 제거
         val start = System.currentTimeMillis()
         val end = start + min * 60_000L
         timers[stage] = TimerInfo(1, start, end)

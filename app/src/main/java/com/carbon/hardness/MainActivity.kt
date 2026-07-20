@@ -187,13 +187,6 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(send, "측정 이력 보내기"))
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (vm.voiceMode) { vm.toggleMic(); return true }
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
     override fun onPause() { super.onPause(); voice?.stop() }
     override fun onDestroy() { voice?.destroy(); super.onDestroy() }
 }
@@ -235,7 +228,7 @@ private fun AppScreen(
         DialEditor(
             slot = editSlot, slotName = vm.slots[editSlot - 1].name,
             initial = vm.weight(editSlot) ?: vm.defaultWeight(editSlot),
-            onConfirm = { vm.setWeight(editSlot, it); editSlot = 0 },
+            onConfirm = { vm.setWeight(editSlot, it, confirm = false); editSlot = 0 },
             onDismiss = { editSlot = 0 }
         )
     }
@@ -393,7 +386,7 @@ private fun StepStrip(vm: HardnessViewModel) {
                         }
                         done -> Text("✓ ${TimeFmt.clock(vm.timerEnd(s.index))}", color = GREEN,
                             fontFamily = MONO, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        else -> Text("${vm.stageMinutes(s.index)}′", color = SUB, fontSize = 10.sp, maxLines = 1)
+                        else -> Text("${vm.effectiveMinutes(s.index)}′", color = SUB, fontSize = 10.sp, maxLines = 1)
                     }
                 } else {
                     val filled = s.weighSlots.count { vm.weight(it) != null }
@@ -417,6 +410,7 @@ private fun StepStrip(vm: HardnessViewModel) {
 private fun TimerCard(vm: HardnessViewModel, stage: Int) {
     val s = vm.stages[stage]
     val st = vm.timerStatus(stage)
+    var editingTime by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = SURF),
         shape = RoundedCornerShape(20.dp),
@@ -429,17 +423,18 @@ private fun TimerCard(vm: HardnessViewModel, stage: Int) {
                 val (tag, tagBg, tagFg) = when (st) {
                     1 -> Triple("진행 중", AMBER_SOFT, AMBER)
                     2 -> Triple("완료", GREEN_SOFT, GREEN)
-                    else -> Triple("${vm.stageMinutes(stage)}분", BG, SUB)
+                    else -> Triple("${vm.effectiveMinutes(stage)}분", BG, SUB)
                 }
                 Box(Modifier.clip(RoundedCornerShape(999.dp)).background(tagBg).padding(horizontal = 10.dp, vertical = 4.dp)) {
                     Text(tag, color = tagFg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            val remain = if (st == 1) vm.remainingSec(stage) else vm.stageMinutes(stage) * 60
+            val remain = if (st == 1) vm.remainingSec(stage) else vm.effectiveMinutes(stage) * 60
             Text(
                 TimeFmt.mmss(remain),
                 color = if (st == 1) ACCENT else TXT, fontFamily = MONO,
-                fontSize = 64.sp, fontWeight = FontWeight.Black
+                fontSize = 64.sp, fontWeight = FontWeight.Black,
+                modifier = Modifier.clickable { if (st != 2) editingTime = true }
             )
             if (st == 1) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -448,7 +443,7 @@ private fun TimerCard(vm: HardnessViewModel, stage: Int) {
                     Text("완료 ${TimeFmt.clock(vm.timerEnd(stage))}", color = ACCENT, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
-                Text("시작하면 완료 시각이 표시됩니다", color = SUB, fontSize = 13.sp)
+                Text("숫자를 누르면 이번만 시간 변경", color = SUB, fontSize = 13.sp)
             }
             Spacer(Modifier.height(14.dp))
             when (st) {
@@ -456,8 +451,78 @@ private fun TimerCard(vm: HardnessViewModel, stage: Int) {
                 2 -> BigButton("다시 시작", BG, TXT) { vm.startTimer(stage) }
                 else -> BigButton("시작", ACCENT, Color.White) { vm.startTimer(stage) }
             }
+            if (st != 2) {
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .background(BG).clickable { vm.completeTimerStage(stage) }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "이미 끝냈어요 — 완료 처리 ✓",
+                        color = SUB, fontSize = 15.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Text("음성: \"${s.short} 시작\" · \"정지\"", color = SUB, fontSize = 13.sp)
+        }
+    }
+
+    if (editingTime) {
+        TimerEditDialog(
+            title = s.title,
+            initialMin = if (st == 1) ((vm.remainingSec(stage) + 59) / 60).coerceAtLeast(1)
+            else vm.effectiveMinutes(stage),
+            running = st == 1,
+            onApply = { vm.editTimer(stage, it); editingTime = false },
+            onDismiss = { editingTime = false }
+        )
+    }
+}
+
+@Composable
+private fun TimerEditDialog(
+    title: String, initialMin: Int, running: Boolean,
+    onApply: (Int) -> Unit, onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialMin.toString()) }
+    Dialog(onDismissRequest = onDismiss) {
+        Card(colors = CardDefaults.cardColors(containerColor = SURF), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, color = SUB, fontSize = 14.sp)
+                Text(
+                    if (running) "남은 시간 변경 (분)" else "이번만 타이머 시간 변경 (분)",
+                    color = TXT, fontSize = 17.sp, fontWeight = FontWeight.Black
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = MONO, fontSize = 34.sp, fontWeight = FontWeight.Black,
+                        textAlign = TextAlign.Center
+                    ),
+                    modifier = Modifier.width(140.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("기본 시간은 설정에서 바꿔요 · 이건 이번 한 번만", color = SUB, fontSize = 11.sp)
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = onDismiss, modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BG)
+                    ) { Text("취소", color = TXT, fontSize = 16.sp) }
+                    Button(
+                        onClick = { text.toIntOrNull()?.let { if (it >= 1) onApply(it) } },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                    ) { Text("적용", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
         }
     }
 }
@@ -677,7 +742,7 @@ private fun VoiceBar(vm: HardnessViewModel) {
                             Text("마이크 켜기", color = TXT, fontSize = 24.sp, fontWeight = FontWeight.Black)
                             Text(
                                 (if (vm.onDeviceStt) "온디바이스 인식" else "일반 인식") +
-                                    " · 여기 또는 볼륨키를 누르세요",
+                                    " · 여기를 눌러 켜기",
                                 color = SUB, fontSize = 13.sp, maxLines = 1
                             )
                         }
@@ -694,6 +759,7 @@ private fun VoiceBar(vm: HardnessViewModel) {
 private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDismiss: () -> Unit) {
     var records by remember { mutableStateOf(vm.history.all()) }
     var deleting by remember { mutableStateOf<HistoryRecord?>(null) }
+    var editing by remember { mutableStateOf<HistoryRecord?>(null) }
     val df = remember { SimpleDateFormat("M/d (E) HH:mm", Locale.KOREA) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -719,7 +785,7 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                     ToolChip(text = "전체 📤", active = false) { onShare(History.toTsv(records)) }
                 }
                 Spacer(Modifier.height(10.dp))
-                Text("항목을 길게 누르면 삭제할 수 있어요", color = SUB, fontSize = 11.sp)
+                Text("탭하면 수정 · 길게 누르면 삭제", color = SUB, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
                 if (records.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -735,7 +801,7 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                             Column(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                                     .background(BG)
-                                    .combinedClickable(onClick = {}, onLongClick = { deleting = r })
+                                    .combinedClickable(onClick = { editing = r }, onLongClick = { deleting = r })
                                     .padding(12.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -774,6 +840,18 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
         }
     }
 
+    editing?.let { r ->
+        EditRecordDialog(
+            record = r,
+            onSave = { name, w1, w2, w3 ->
+                vm.history.update(r.ts, name, w1, w2, w3)
+                records = vm.history.all()
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+
     deleting?.let { r ->
         Dialog(onDismissRequest = { deleting = null }) {
             Card(colors = CardDefaults.cardColors(containerColor = SURF), shape = RoundedCornerShape(22.dp)) {
@@ -802,6 +880,63 @@ private fun HistoryScreen(vm: HardnessViewModel, onShare: (String) -> Unit, onDi
                             colors = ButtonDefaults.buttonColors(containerColor = RED)
                         ) { Text("삭제", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ---------- 이력 수정 ----------
+@Composable
+private fun EditRecordDialog(
+    record: HistoryRecord,
+    onSave: (String, Double, Double, Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(record.name) }
+    var w1 by remember { mutableStateOf(f2(record.w1)) }
+    var w2 by remember { mutableStateOf(f2(record.w2)) }
+    var w3 by remember { mutableStateOf(f2(record.w3)) }
+
+    val pw1 = w1.toDoubleOrNull(); val pw2 = w2.toDoubleOrNull(); val pw3 = w3.toDoubleOrNull()
+    val valid = pw1 != null && pw1 > 0 && pw2 != null && pw3 != null
+    val prevH = if (valid) pw2!! / pw1!! * 100.0 else null
+    val prevE = if (valid) kotlin.math.abs(pw2!! + pw3!! - pw1!!) / pw1!! * 100.0 else null
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(colors = CardDefaults.cardColors(containerColor = SURF), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.padding(20.dp)) {
+                Text("기록 수정", color = TXT, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, singleLine = true,
+                    label = { Text("시료 이름") }, modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                NumField("초기 M₀ (g)", w1) { w1 = it }
+                NumField("무거운 (g)", w2) { w2 = it }
+                NumField("가벼운 (g)", w3) { w3 = it }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (prevH != null) "→ 경도 ${f2(prevH)}% · 질량오차 ${f2(prevE!!)}% (자동 재계산)"
+                    else "숫자를 확인해주세요",
+                    color = if (prevH != null) GREEN else RED,
+                    fontSize = 13.sp, fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = onDismiss, modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BG)
+                    ) { Text("취소", color = TXT, fontSize = 16.sp) }
+                    Button(
+                        onClick = { if (valid) onSave(name, pw1!!, pw2!!, pw3!!) },
+                        enabled = valid,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                    ) { Text("저장", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                 }
             }
         }

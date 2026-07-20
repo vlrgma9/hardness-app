@@ -1213,6 +1213,8 @@ private fun SettingsScreen(
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val version = remember { Updater.currentVersion(ctx) }
+    // 설정을 열 때마다 최신 버전 새로고침
+    LaunchedEffect(Unit) { vm.checkUpdate(silent = true) }
     var dw1 by remember { mutableStateOf(fmt(vm.defaultWeight(1))) }
     var dw2 by remember { mutableStateOf(fmt(vm.defaultWeight(2))) }
     var dw3 by remember { mutableStateOf(fmt(vm.defaultWeight(3))) }

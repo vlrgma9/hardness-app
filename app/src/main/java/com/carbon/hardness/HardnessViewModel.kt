@@ -99,13 +99,27 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun downloadAndInstall() {
-        val rel = updateInfo ?: return
-        val url = rel.apkUrl ?: return
         if (updateBusy) return
         updateBusy = true
-        updateMsg = "다운로드 중… (수 초 걸려요)"
+        updateMsg = "최신 버전 확인 중…"
         viewModelScope.launch {
-            val file = withContext(Dispatchers.IO) { Updater.downloadApk(ctx, url) }
+            // 설치 직전에 항상 다시 확인 → 낡은 버전 정보로 설치되는 일 방지
+            val rel = withContext(Dispatchers.IO) { Updater.fetchLatest() }
+            val cur = Updater.currentVersion(ctx)
+            if (rel?.apkUrl == null) {
+                updateBusy = false
+                updateMsg = "확인 실패 · 인터넷 연결을 확인해주세요"
+                return@launch
+            }
+            if (!Updater.isNewer(rel.tag, cur)) {
+                updateBusy = false
+                updateInfo = null
+                updateMsg = "이미 최신 버전입니다 ✓"
+                return@launch
+            }
+            updateInfo = rel
+            updateMsg = "${rel.tag} 다운로드 중… (수 초 걸려요)"
+            val file = withContext(Dispatchers.IO) { Updater.downloadApk(ctx, rel.apkUrl) }
             updateBusy = false
             if (file != null) {
                 updateMsg = "설치 화면으로 이동합니다"

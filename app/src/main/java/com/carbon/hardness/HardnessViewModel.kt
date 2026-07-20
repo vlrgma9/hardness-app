@@ -251,6 +251,13 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     /** confirm=true(음성): "맞나요?" 확인 후 확정. false(수동 입력): 즉시 확정 */
     fun setWeight(slot: Int, value: Double, confirm: Boolean = true) {
         if (slot !in 1..3) return
+        // 직전 측정이 이미 저장된 상태에서 초기무게(1번)를 새로 넣으면 = 새 시료 시작.
+        // 이전 시료의 무거운/가벼운이 남아 엉터리 경도가 저장되는 것 방지.
+        if (slot == 1 && savedRun) {
+            wState[1] = null
+            wState[2] = null
+            prefs.sampleStart = 0L
+        }
         prevValue = wState[slot - 1]
         wState[slot - 1] = value
         persistWeights()

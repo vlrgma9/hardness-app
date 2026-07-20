@@ -35,6 +35,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("savedRun", false)
         set(v) { sp.edit().putBoolean("savedRun", v).apply() }
 
+    /** 이번 측정과 연동된 이력 기록의 ts (0 = 아직 없음) */
+    var currentRunTs: Long
+        get() = sp.getLong("runTs", 0L)
+        set(v) { sp.edit().putLong("runTs", v).apply() }
+
     // 타이머 단계별: status(0=idle,1=running,2=done), start, end
     fun timerStatus(stage: Int) = sp.getInt("t${stage}_st", 0)
     fun timerStart(stage: Int) = sp.getLong("t${stage}_start", 0L)
@@ -66,7 +71,7 @@ class Prefs(context: Context) {
     /** 측정 진행 데이터만 지운다 (설정·모드는 유지) */
     fun clearRun() {
         val e = sp.edit()
-        for (k in listOf("w1_bits", "w2_bits", "w3_bits", "stage", "sampleStart", "sampleName", "savedRun"))
+        for (k in listOf("w1_bits", "w2_bits", "w3_bits", "stage", "sampleStart", "sampleName", "savedRun", "runTs"))
             e.remove(k)
         for (s in 0..4) {
             e.remove("t${s}_st"); e.remove("t${s}_start"); e.remove("t${s}_end")

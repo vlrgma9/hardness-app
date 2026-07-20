@@ -51,6 +51,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     var sampleName by mutableStateOf(""); private set
     var confirmingReset by mutableStateOf(false); private set
     var savedRun by mutableStateOf(false); private set
+    private var currentRunTs = 0L   // 이번 측정과 연동된 이력 기록
 
     // ---- 설정 (기본 무게 · 타이머 분) ----
     private val defWeights = mutableStateMapOf<Int, Double>()
@@ -141,6 +142,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         voiceMode = prefs.voiceMode
         sampleName = prefs.sampleName
         savedRun = prefs.savedRun
+        currentRunTs = prefs.currentRunTs
         for (s in Experiment.timerStageIndices) {
             timers[s] = TimerInfo(prefs.timerStatus(s), prefs.timerStart(s), prefs.timerEnd(s))
         }
@@ -251,12 +253,14 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
     /** confirm=true(음성): "맞나요?" 확인 후 확정. false(수동 입력): 즉시 확정 */
     fun setWeight(slot: Int, value: Double, confirm: Boolean = true) {
         if (slot !in 1..3) return
-        // 직전 측정이 이미 저장된 상태에서 초기무게(1번)를 새로 넣으면 = 새 시료 시작.
+        // 완성된 측정이 있는 상태에서 초기무게(1번)를 새로 넣으면 = 새 시료 시작.
         // 이전 시료의 무거운/가벼운이 남아 엉터리 경도가 저장되는 것 방지.
-        if (slot == 1 && savedRun) {
+        if (slot == 1 && currentRunTs != 0L) {
             wState[1] = null
             wState[2] = null
             prefs.sampleStart = 0L
+            currentRunTs = 0L
+            prefs.currentRunTs = 0L
         }
         prevValue = wState[slot - 1]
         wState[slot - 1] = value
@@ -295,22 +299,35 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 세 무게가 모두 확정되면 (단계 무관) 즉시 이력에 저장 */
+    /**
+     * 세 무게가 모두 확정되면 이력에 반영.
+     * 이번 측정의 기록이 이미 있으면 그 줄을 제자리에서 수정 (새 줄 X).
+     * 새 줄은 ①새 시료의 초기무게 입력 ②초기화 때만 시작된다.
+     */
     private fun maybeSave() {
-        if (pendingSlot != null || savedRun) return
+        if (pendingSlot != null) return
         val w1 = wState[0] ?: return
         val w2 = wState[1] ?: return
         val w3 = wState[2] ?: return
         val h = hardness ?: return
-        history.add(
-            HistoryRecord(System.currentTimeMillis(), sampleName, w1, w2, w3, h, massErrorPct ?: 0.0)
-        )
+        val updated: Boolean
+        if (currentRunTs != 0L) {
+            history.update(currentRunTs, sampleName, w1, w2, w3)
+            updated = true
+        } else {
+            val ts = System.currentTimeMillis()
+            history.add(HistoryRecord(ts, sampleName, w1, w2, w3, h, massErrorPct ?: 0.0))
+            currentRunTs = ts
+            prefs.currentRunTs = ts
+            updated = false
+        }
         savedRun = true
         prefs.savedRun = true
+        val verb = if (updated) "이력에 반영됨" else "이력에 저장됨"
         status = when (massOk) {
-            true -> "경도 ${fmt(h)}% · 이력에 저장됨 ✓"
-            false -> "경도 ${fmt(h)}% · 오차 초과, 재측정 권장 · 저장됨"
-            null -> "이력에 저장됨 ✓"
+            true -> "경도 ${fmt(h)}% · $verb ✓"
+            false -> "경도 ${fmt(h)}% · 오차 초과, 재측정 권장 · $verb"
+            null -> "$verb ✓"
         }
     }
 
@@ -338,6 +355,13 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         sampleName = name.trim()
         prefs.sampleName = sampleName
         status = "시료명: $sampleName"
+        // 이번 측정 기록이 이미 있으면 이름도 바로 반영
+        if (currentRunTs != 0L) {
+            val w1 = wState[0]; val w2 = wState[1]; val w3 = wState[2]
+            if (w1 != null && w2 != null && w3 != null) {
+                history.update(currentRunTs, sampleName, w1, w2, w3)
+            }
+        }
     }
 
     // ---------- 타이머 ----------
@@ -481,6 +505,7 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
         prefs.clearRun()   // 설정(기본무게·타이머 분·모드)은 유지
         sampleName = ""
         savedRun = false
+        currentRunTs = 0L
         status = "새 측정 시작 · 시료명을 정하고 \"거르기 시작\""
     }
 

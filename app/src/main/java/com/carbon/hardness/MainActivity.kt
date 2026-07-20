@@ -625,7 +625,7 @@ private fun ResultCard(vm: HardnessViewModel) {
             if (vm.savedRun) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "✓ 이력에 저장됨 — [이력]에서 확인 · 📤로 내보내기",
+                    "✓ 이력에 저장됨 — 지금 값을 고치면 이 기록이 자동 수정돼요",
                     color = GREEN, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                 )

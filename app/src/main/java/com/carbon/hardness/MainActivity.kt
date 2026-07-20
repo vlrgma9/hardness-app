@@ -894,14 +894,15 @@ private fun EditRecordDialog(
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(record.name) }
-    var w1 by remember { mutableStateOf(f2(record.w1)) }
-    var w2 by remember { mutableStateOf(f2(record.w2)) }
-    var w3 by remember { mutableStateOf(f2(record.w3)) }
+    var w1 by remember { mutableStateOf(record.w1) }
+    var w2 by remember { mutableStateOf(record.w2) }
+    var w3 by remember { mutableStateOf(record.w3) }
+    var editField by remember { mutableStateOf(0) }
+    val slotNames = listOf("초기 M₀", "무거운", "가벼운")
 
-    val pw1 = w1.toDoubleOrNull(); val pw2 = w2.toDoubleOrNull(); val pw3 = w3.toDoubleOrNull()
-    val valid = pw1 != null && pw1 > 0 && pw2 != null && pw3 != null
-    val prevH = if (valid) pw2!! / pw1!! * 100.0 else null
-    val prevE = if (valid) kotlin.math.abs(pw2!! + pw3!! - pw1!!) / pw1!! * 100.0 else null
+    val valid = w1 > 0
+    val prevH = if (valid) w2 / w1 * 100.0 else null
+    val prevE = if (valid) kotlin.math.abs(w2 + w3 - w1) / w1 * 100.0 else null
 
     Dialog(onDismissRequest = onDismiss) {
         Card(colors = CardDefaults.cardColors(containerColor = SURF), shape = RoundedCornerShape(22.dp)) {
@@ -912,14 +913,30 @@ private fun EditRecordDialog(
                     value = name, onValueChange = { name = it }, singleLine = true,
                     label = { Text("시료 이름") }, modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(6.dp))
-                NumField("초기 M₀ (g)", w1) { w1 = it }
-                NumField("무거운 (g)", w2) { w2 = it }
-                NumField("가벼운 (g)", w3) { w3 = it }
+                Spacer(Modifier.height(10.dp))
+                listOf(
+                    Triple(1, w1, slotNames[0]),
+                    Triple(2, w2, slotNames[1]),
+                    Triple(3, w3, slotNames[2]),
+                ).forEach { (n, v, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp)).background(BG)
+                            .clickable { editField = n }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(label, color = TXT, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f))
+                        Text("${f2(v)} g", color = ACCENT, fontFamily = MONO,
+                            fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text("  ✎", color = SUB, fontSize = 14.sp)
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (prevH != null) "→ 경도 ${f2(prevH)}% · 질량오차 ${f2(prevE!!)}% (자동 재계산)"
-                    else "숫자를 확인해주세요",
+                    else "초기무게가 0이면 안 돼요",
                     color = if (prevH != null) GREEN else RED,
                     fontSize = 13.sp, fontWeight = FontWeight.Bold
                 )
@@ -931,7 +948,7 @@ private fun EditRecordDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = BG)
                     ) { Text("취소", color = TXT, fontSize = 16.sp) }
                     Button(
-                        onClick = { if (valid) onSave(name, pw1!!, pw2!!, pw3!!) },
+                        onClick = { if (valid) onSave(name, w1, w2, w3) },
                         enabled = valid,
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(14.dp),
@@ -940,6 +957,20 @@ private fun EditRecordDialog(
                 }
             }
         }
+    }
+
+    // 무게 항목 탭 → 홈과 똑같은 다이얼 입력창
+    if (editField != 0) {
+        DialEditor(
+            slot = editField,
+            slotName = slotNames[editField - 1],
+            initial = when (editField) { 1 -> w1; 2 -> w2; else -> w3 },
+            onConfirm = { v ->
+                when (editField) { 1 -> w1 = v; 2 -> w2 = v; else -> w3 = v }
+                editField = 0
+            },
+            onDismiss = { editField = 0 }
+        )
     }
 }
 
@@ -990,20 +1021,26 @@ private fun DialEditor(
                     Text("숫자를 누르면 직접 입력", color = SUB, fontSize = 11.sp)
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
+
+                // ±1 (위쪽, 넓게 떨어져서)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AdjBtn("−1", Modifier.weight(1f), 44.dp, 16.sp) { raw = clampD(round2(raw) - 1.0) }
+                    AdjBtn("+1", Modifier.weight(1f), 44.dp, 16.sp) { raw = clampD(round2(raw) + 1.0) }
+                }
+
+                Spacer(Modifier.height(10.dp))
 
                 // 드래그 다이얼 (1칸 = 0.1g, 관성 없음)
                 DragDial(value = raw, onChange = { raw = clampD(it) })
                 Text("좌우 드래그 = 0.1씩", color = SUB, fontSize = 11.sp)
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
-                // 조정 버튼 (자주 쓰는 ±0.01 이 바깥쪽)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FineBtn("−0.01") { raw = clampD(round2(raw) - 0.01) }
-                    FineBtn("−1") { raw = clampD(round2(raw) - 1.0) }
-                    FineBtn("+1") { raw = clampD(round2(raw) + 1.0) }
-                    FineBtn("+0.01") { raw = clampD(round2(raw) + 0.01) }
+                // ±0.01 (아래쪽, 크게 — 제일 자주 씀)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AdjBtn("−0.01", Modifier.weight(1f), 60.dp, 20.sp) { raw = clampD(round2(raw) - 0.01) }
+                    AdjBtn("+0.01", Modifier.weight(1f), 60.dp, 20.sp) { raw = clampD(round2(raw) + 0.01) }
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -1084,13 +1121,17 @@ private fun DragDial(value: Double, onChange: (Double) -> Unit) {
 }
 
 @Composable
-private fun FineBtn(label: String, onClick: () -> Unit) {
+private fun AdjBtn(
+    label: String, modifier: Modifier,
+    height: androidx.compose.ui.unit.Dp, fontSize: androidx.compose.ui.unit.TextUnit,
+    onClick: () -> Unit
+) {
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(ACCENT_SOFT)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 12.dp)
+        modifier.height(height).clip(RoundedCornerShape(12.dp)).background(ACCENT_SOFT)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
     ) {
-        Text(label, color = ACCENT, fontFamily = MONO, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = ACCENT, fontFamily = MONO, fontSize = fontSize, fontWeight = FontWeight.Black)
     }
 }
 

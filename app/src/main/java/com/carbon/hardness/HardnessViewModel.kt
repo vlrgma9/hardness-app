@@ -315,6 +315,15 @@ class HardnessViewModel(app: Application) : AndroidViewModel(app) {
             history.update(currentRunTs, sampleName, w1, w2, w3)
             updated = true
         } else {
+            // 이름을 안 정했으면 "7/20(일) - 1st 시료" 형식으로 자동 명명
+            if (sampleName.isBlank()) {
+                val n = history.today().size + 1
+                val ord = when (n) { 1 -> "1st"; 2 -> "2nd"; 3 -> "3rd"; else -> "${n}th" }
+                val date = java.text.SimpleDateFormat("M/d(E)", java.util.Locale.KOREA)
+                    .format(java.util.Date())
+                sampleName = "$date - $ord 시료"
+                prefs.sampleName = sampleName
+            }
             val ts = System.currentTimeMillis()
             history.add(HistoryRecord(ts, sampleName, w1, w2, w3, h, massErrorPct ?: 0.0))
             currentRunTs = ts

@@ -992,19 +992,17 @@ private fun DialEditor(
 
                 Spacer(Modifier.height(12.dp))
 
-                // 드래그 다이얼 (좌우로 문지르면 연속으로 변함)
+                // 드래그 다이얼 (1칸 = 0.1g, 관성 없음)
                 DragDial(value = raw, onChange = { raw = clampD(it) })
-                Text("좌우로 드래그 · 1칸 = 0.01 g", color = SUB, fontSize = 11.sp)
+                Text("좌우 드래그 = 0.1씩", color = SUB, fontSize = 11.sp)
 
                 Spacer(Modifier.height(12.dp))
 
-                // 미세조정 버튼 (기존 기능 유지)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 조정 버튼
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FineBtn("−1") { raw = clampD(round2(raw) - 1.0) }
-                    FineBtn("−0.1") { raw = clampD(round2(raw) - 0.1) }
                     FineBtn("−0.01") { raw = clampD(round2(raw) - 0.01) }
                     FineBtn("+0.01") { raw = clampD(round2(raw) + 0.01) }
-                    FineBtn("+0.1") { raw = clampD(round2(raw) + 0.1) }
                     FineBtn("+1") { raw = clampD(round2(raw) + 1.0) }
                 }
 
@@ -1028,15 +1026,15 @@ private fun DialEditor(
 
 /**
  * 눈금이 손가락을 따라 움직이는 가로 다이얼.
- * - 손이 화면에 붙어 있는 동안: 항상 0.01 단위 정밀 조작
- * - 튕기듯 놓으면(fling): 관성으로 0.1 단위로 쫘라락 감속
+ * 1칸 = 0.1g 씩 딱딱 끊어서 이동 (관성 없음, 0.01 자리는 유지)
  */
 @Composable
 private fun DragDial(value: Double, onChange: (Double) -> Unit) {
     val curValue by rememberUpdatedState(value)
     val curOnChange by rememberUpdatedState(onChange)
     val density = LocalDensity.current
-    val tickSpacingPx = with(density) { 14.dp.toPx() }   // 0.01g 당 픽셀
+    val tickSpacingPx = with(density) { 18.dp.toPx() }   // 0.1g 당 픽셀
+    val acc = remember { mutableStateOf(0f) }            // 아직 칸을 못 넘은 드래그 잔량
 
     Box(
         Modifier.fillMaxWidth().height(84.dp)
@@ -1045,36 +1043,27 @@ private fun DragDial(value: Double, onChange: (Double) -> Unit) {
             .draggable(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { delta ->
-                    // 터치 중엔 속도와 무관하게 0.01 정밀
-                    curOnChange(curValue - delta / tickSpacingPx * 0.01)
-                },
-                onDragStopped = { velocity ->
-                    // 놓는 순간 빠르면 관성 회전 (0.1 단위)
-                    var v = velocity
-                    if (kotlin.math.abs(v) > 900f) {
-                        var cur = curValue
-                        while (kotlin.math.abs(v) > 70f) {
-                            cur -= (v * 0.016f) / tickSpacingPx * 0.1
-                            cur = cur.coerceIn(0.0, 200.0)
-                            curOnChange(Math.round(cur * 10.0) / 10.0)
-                            v *= 0.93f
-                            kotlinx.coroutines.delay(16)
-                        }
+                    acc.value += delta
+                    val steps = (acc.value / tickSpacingPx).toInt()
+                    if (steps != 0) {
+                        acc.value -= steps * tickSpacingPx
+                        curOnChange(round2(curValue - steps * 0.1))
                     }
-                }
+                },
+                onDragStopped = { acc.value = 0f }
             )
     ) {
         Canvas(Modifier.matchParentSize()) {
             val cx = size.width / 2f
             val cy = size.height
-            val t = curValue * 100.0                     // 0.01 단위 연속 위치
+            val t = curValue * 10.0                      // 0.1 단위 위치
             val first = (t - cx / tickSpacingPx).toInt() - 1
             val last = (t + cx / tickSpacingPx).toInt() + 1
             for (k in first..last) {
                 if (k < 0) continue
                 val x = cx + ((k - t) * tickSpacingPx).toFloat()
                 if (x < 0 || x > size.width) continue
-                val major = k % 10 == 0
+                val major = k % 10 == 0                  // 1g 마다 큰 눈금
                 val h = if (major) size.height * 0.62f else size.height * 0.34f
                 drawLine(
                     color = if (major) Color(0xFF98A2B3) else Color(0xFFD0D5DD),
